@@ -13,14 +13,25 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  Patch,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
-import { DashboardStats, ProductService } from './product.service';
+import {
+  DashboardStats,
+  ProductService,
+  SellerProductsResponse,
+} from './product.service';
 import { Product } from './model/product.schema';
 import {
+  BulkDeleteDto,
+  BulkVisibilityDto,
   CategoryProductDto,
   CreateProductDto,
   ProductSearchDto,
+  SellerProductsQueryDto,
   StoreCategoryProductDto,
+  ToggleVisibilityDto,
   UpdateProductDto,
 } from './dto/productDto';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -51,6 +62,24 @@ export class ProductController {
     }
 
     return this.productService.getAdminDashboardStats(sellerId);
+  }
+
+  /**
+   * GET /product/seller/manage
+   * Obtener productos del vendedor con filtros avanzados
+   */
+  @Get('/seller/manage')
+  @UseGuards(UserGuard)
+  async getSellerProducts(
+    @Req() req,
+    @Query(new ValidationPipe({ transform: true }))
+    query: SellerProductsQueryDto,
+  ): Promise<SellerProductsResponse> {
+    const sellerId = req.user.userId;
+    if (!sellerId) {
+      throw new BadRequestException('No se pudo obtener el ID del usuario');
+    }
+    return this.productService.getSellerProductsWithFilters(sellerId, query);
   }
 
   @Get(':id')
@@ -152,8 +181,64 @@ export class ProductController {
     return this.productService.editarProducto(id, productoDto, images);
   }
 
+  /**
+   * POST /product/bulk/visibility
+   * Cambiar visibilidad en lote
+   */
+  @Post('/bulk/visibility')
+  @UseGuards(UserGuard)
+  @HttpCode(HttpStatus.OK)
+  async bulkVisibility(
+    @Body(ValidationPipe) dto: BulkVisibilityDto,
+    @Req() req,
+  ) {
+    const sellerId = req.user.userId;
+    return this.productService.bulkUpdateVisibility(
+      dto.productIds,
+      dto.isVisible,
+      sellerId,
+    );
+  }
+
+  /**
+   * PATCH /product/:id/visibility
+   * Toggle visibilidad
+   */
+  @Patch(':id/visibility')
+  @UseGuards(UserGuard)
+  @HttpCode(HttpStatus.OK)
+  async toggleVisibility(
+    @Param('id') id: string,
+    @Body(ValidationPipe) dto: ToggleVisibilityDto,
+    @Req() req,
+  ) {
+    const sellerId = req.user.userId;
+    return this.productService.toggleProductVisibility(
+      id,
+      dto.isVisible,
+      sellerId,
+    );
+  }
+
+  /**
+   * POST /product/bulk/delete
+   * Eliminar en lote
+   */
+  @Post('/bulk/delete')
+  @UseGuards(UserGuard)
+  @HttpCode(HttpStatus.OK)
+  async bulkDelete(@Body(ValidationPipe) dto: BulkDeleteDto, @Req() req) {
+    const sellerId = req.user.userId;
+    return this.productService.bulkDeleteProducts(dto.productIds, sellerId);
+  }
+
   @Delete(':id')
-  async eliminarProducto(@Param('id') id: string): Promise<Product | null> {
-    return this.productService.eliminarProducto(id);
+  @UseGuards(UserGuard)
+  async eliminarProducto(
+    @Param('id') id: string,
+    @Req() req,
+  ): Promise<Product | null> {
+    const sellerId = req.user.userId;
+    return this.productService.eliminarProducto(id, sellerId);
   }
 }

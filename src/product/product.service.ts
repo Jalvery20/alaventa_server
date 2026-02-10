@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { Product } from './model/product.schema';
 import {
   CreateProductDto,
   ProductFilter,
+  SellerProductsQueryDto,
   UpdateProductDto,
 } from './dto/productDto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -29,6 +31,22 @@ export interface DashboardStats {
   };
   recentProducts: Product[];
   topCategories: CategoryStats[];
+}
+
+export interface SellerProductsResponse {
+  products: Product[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats: {
+    total: number;
+    available: number;
+    outOfStock: number;
+    hidden: number;
+  };
 }
 
 @Injectable()
@@ -83,6 +101,208 @@ export class ProductService {
       this.cloudinaryService.extractPublicIdFromUrl(url),
     );
     await this.cloudinaryService.eliminarImagenesCloudinary(publicIds);
+  }
+
+  private async verifyProductOwnership(
+    productId: string,
+    sellerId: string,
+  ): Promise<Product> {
+    const product = await this.productModel.findById(productId).lean().exec();
+    if (!product) {
+      throw new NotFoundException(`Producto con ID ${productId} no encontrado`);
+    }
+    if (product.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        'No tienes permiso para modificar este producto',
+      );
+    }
+    return product;
+  }
+
+  // ============================================
+  // MÉTODOS PARA PANEL DE ADMINISTRACIÓN
+  // ============================================
+
+  async getSellerProductsWithFilters(
+    sellerId: string,
+    query: SellerProductsQueryDto,
+  ): Promise<SellerProductsResponse> {
+    this.validateObjectId(sellerId, 'ID de vendedor');
+
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      category,
+      status = 'all',
+      sortBy = 'newest',
+    } = query;
+
+    const filter: Record<string, any> = { seller: sellerId };
+
+    switch (status) {
+      case 'available':
+        filter.amount = { $gt: 0 };
+        filter.isVisible = true;
+        break;
+      case 'out-of-stock':
+        filter.amount = 0;
+        break;
+      case 'hidden':
+        filter.isVisible = false;
+        break;
+    }
+
+    if (category && category !== 'all') {
+      filter.category = category;
+    }
+
+    if (search?.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      filter.$and = [
+        {
+          $or: [
+            { name: searchRegex },
+            { category: searchRegex },
+            { description: searchRegex },
+          ],
+        },
+      ];
+    }
+
+    const sortObject: Record<string, 1 | -1> =
+      sortBy === 'name'
+        ? { name: 1 }
+        : sortBy === 'price-asc'
+          ? { price: 1 }
+          : sortBy === 'price-desc'
+            ? { price: -1 }
+            : sortBy === 'stock'
+              ? { amount: -1 }
+              : { createdAt: -1 };
+
+    // Usar el mismo string que funciona en find()
+    const [products, total, stats] = await Promise.all([
+      this.productModel
+        .find(filter)
+        .sort(sortObject)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+        .exec(),
+
+      this.productModel.countDocuments(filter),
+
+      // Aggregate usando $expr para convertir el seller a string y comparar
+      this.productModel.aggregate([
+        {
+          $match: {
+            $expr: {
+              $eq: [{ $toString: '$seller' }, sellerId],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            available: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gt: ['$amount', 0] },
+                      { $eq: ['$isVisible', true] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            outOfStock: { $sum: { $cond: [{ $eq: ['$amount', 0] }, 1, 0] } },
+            hidden: { $sum: { $cond: [{ $eq: ['$isVisible', false] }, 1, 0] } },
+          },
+        },
+      ]),
+    ]);
+
+    const statsResult = stats[0] || {
+      total: 0,
+      available: 0,
+      outOfStock: 0,
+      hidden: 0,
+    };
+
+    return {
+      products: products as Product[],
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        total: statsResult.total,
+        available: statsResult.available,
+        outOfStock: statsResult.outOfStock,
+        hidden: statsResult.hidden,
+      },
+    };
+  }
+
+  async toggleProductVisibility(
+    productId: string,
+    isVisible: boolean,
+    sellerId: string,
+  ): Promise<{ success: boolean; product: Product }> {
+    this.validateObjectId(productId, 'ID de producto');
+    await this.verifyProductOwnership(productId, sellerId);
+
+    const updatedProduct = await this.productModel
+      .findByIdAndUpdate(productId, { isVisible }, { new: true })
+      .lean()
+      .exec();
+
+    return { success: true, product: updatedProduct as Product };
+  }
+
+  /**
+   * Actualizar visibilidad de múltiples productos
+   */
+  async bulkUpdateVisibility(
+    productIds: string[],
+    isVisible: boolean,
+    sellerId: string,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    // Validar todos los IDs
+    productIds.forEach((id) => this.validateObjectId(id, 'ID de producto'));
+
+    // Verificar que todos los productos pertenecen al vendedor
+    const products = await this.productModel
+      .find({
+        _id: { $in: productIds },
+        seller: sellerId,
+      })
+      .select('_id')
+      .lean()
+      .exec();
+
+    if (products.length !== productIds.length) {
+      throw new ForbiddenException(
+        'Algunos productos no te pertenecen o no existen',
+      );
+    }
+
+    const result = await this.productModel.updateMany(
+      { _id: { $in: productIds }, seller: sellerId },
+      { isVisible },
+    );
+
+    return {
+      success: true,
+      modifiedCount: result.modifiedCount,
+    };
   }
 
   /**
@@ -460,17 +680,19 @@ export class ProductService {
   /**
    * Eliminar producto
    */
-  async eliminarProducto(id: string): Promise<Product> {
-    // Validar ObjectId
+  async eliminarProducto(id: string, sellerId?: string): Promise<Product> {
     this.validateObjectId(id, 'ID de producto');
 
     const producto = await this.productModel.findById(id).lean().exec();
-
-    if (!producto) {
+    if (!producto)
       throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+
+    if (sellerId && producto.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        'No tienes permiso para eliminar este producto',
+      );
     }
 
-    // Ejecutar eliminación de imágenes y producto en paralelo
     await Promise.all([
       this.eliminarImagenesProducto(producto.imgUrl),
       this.productModel.findByIdAndDelete(id).exec(),
@@ -555,5 +777,33 @@ export class ProductService {
       recentProducts,
       topCategories,
     };
+  }
+
+  async bulkDeleteProducts(
+    productIds: string[],
+    sellerId: string,
+  ): Promise<{ success: boolean; deletedCount: number }> {
+    productIds.forEach((id) => this.validateObjectId(id, 'ID de producto'));
+
+    const products = await this.productModel
+      .find({ _id: { $in: productIds }, seller: sellerId })
+      .select('_id imgUrl')
+      .lean()
+      .exec();
+
+    if (products.length === 0) {
+      throw new NotFoundException('No se encontraron productos para eliminar');
+    }
+
+    const allImageUrls = products.flatMap((p) => p.imgUrl || []);
+
+    await Promise.all([
+      this.eliminarImagenesProducto(allImageUrls),
+      this.productModel.deleteMany({
+        _id: { $in: products.map((p) => p._id) },
+      }),
+    ]);
+
+    return { success: true, deletedCount: products.length };
   }
 }

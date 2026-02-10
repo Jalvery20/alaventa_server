@@ -1,15 +1,15 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-@Schema({ versionKey: false })
+@Schema({ versionKey: false, timestamps: true })
 export class Product extends Document {
   @Prop({
     type: String,
     required: [true, 'El nombre del producto es requerido'],
-    minlength: [5, 'El nombre del producto debe tener al menos  5 caracteres'],
+    minlength: [5, 'El nombre del producto debe tener al menos 5 caracteres'],
     maxlength: [
       100,
-      'El nombre del producto no debe exceder los  100 caracteres',
+      'El nombre del producto no debe exceder los 100 caracteres',
     ],
   })
   name: string;
@@ -17,9 +17,15 @@ export class Product extends Document {
   @Prop({
     type: Number,
     required: [true, 'El precio es requerido'],
-    min: [1, 'El precio debe ser mayor o igual a  1'],
+    min: [1, 'El precio debe ser mayor o igual a 1'],
   })
   price: number;
+
+  @Prop({
+    type: Number,
+    min: [1, 'El precio original debe ser mayor o igual a 1'],
+  })
+  originalPrice?: number;
 
   @Prop({
     type: String,
@@ -32,7 +38,7 @@ export class Product extends Document {
   @Prop({
     type: Number,
     required: [true, 'La cantidad es requerida'],
-    min: [0, 'La cantidad debe ser mayor o igual a  0'],
+    min: [0, 'La cantidad debe ser mayor o igual a 0'],
   })
   amount: number;
 
@@ -40,7 +46,7 @@ export class Product extends Document {
     type: Types.ObjectId,
     ref: 'User',
     required: [true, 'El vendedor es requerido'],
-    index: true, // Índice para búsquedas por vendedor
+    index: true,
   })
   seller: Types.ObjectId;
 
@@ -66,14 +72,23 @@ export class Product extends Document {
   })
   category: string;
 
-  @Prop({ type: Date, default: Date.now, index: true })
+  @Prop({
+    type: Boolean,
+    default: true,
+    index: true,
+  })
+  isVisible: boolean;
+
+  // Timestamps automáticos
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
 // Índices compuestos para queries frecuentes
 ProductSchema.index({ seller: 1, category: 1, createdAt: -1 });
+ProductSchema.index({ seller: 1, isVisible: 1, amount: 1 });
+ProductSchema.index({ seller: 1, createdAt: -1 });
 ProductSchema.index({ category: 1, seller: 1 });
-ProductSchema.index({ name: 'text' }); // Para búsquedas de texto más eficientes
-ProductSchema.index({ seller: 1, createdAt: -1 }); // Para productos de un vendedor ordenados por fecha
+ProductSchema.index({ name: 'text' });
