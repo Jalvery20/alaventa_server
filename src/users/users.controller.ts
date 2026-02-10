@@ -23,6 +23,7 @@ import {
   PatchStoreDto,
   UpdateAvailableUserDto,
   UpdatePasswordDto,
+  UpdateStoreCategoriesDto,
   UpdateStoreDto,
   UpdateUserDto,
   UpdateUserExpiryDateDto,
@@ -32,6 +33,7 @@ import { AdminGuard } from 'src/guards/admin.guard';
 import { StoreGuard } from 'src/guards/store.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { EditUserGuard } from 'src/guards/edit-user.guard';
+import { UserGuard } from 'src/guards/user.guard';
 
 @Controller('users')
 export class UsersController {
@@ -48,6 +50,7 @@ export class UsersController {
   }
 
   @Get(':id')
+  @UseGuards(UserGuard)
   async getUserById(@Param('id') id: string) {
     return this.usersService.getUserById(id);
   }
@@ -66,6 +69,12 @@ export class UsersController {
   @Get('/store/:name')
   async getStoreByName(@Param('name') name: string) {
     return this.usersService.getStoreByName(name);
+  }
+
+  @Get('/store/:id/categories')
+  @UseGuards(StoreGuard)
+  async getStoreCategories(@Param('id') id: string) {
+    return this.usersService.getStoreCategories(id);
   }
 
   // ============================================
@@ -172,6 +181,30 @@ export class UsersController {
     @UploadedFile() storePic?: Express.Multer.File,
   ) {
     return this.usersService.patchStore(id, patchStoreDto, storePic);
+  }
+
+  /**
+   * PATCH /users/store/:id/categories
+   * Actualizar categorías de una tienda
+   */
+  @Patch('/store/:id/categories')
+  @UseGuards(StoreGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateStoreCategories(
+    @Param('id') id: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    updateStoreCategoriesDto: UpdateStoreCategoriesDto,
+  ) {
+    return this.usersService.updateStoreCategories(
+      id,
+      updateStoreCategoriesDto,
+    );
   }
 
   // ============================================

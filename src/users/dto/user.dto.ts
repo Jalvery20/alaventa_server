@@ -18,6 +18,7 @@ import {
   Min,
   ArrayMaxSize,
   ValidateIf,
+  ArrayMinSize,
 } from 'class-validator';
 
 // ============================================
@@ -145,6 +146,25 @@ export class DeliveryOptionDTO {
   @IsNumber()
   @Min(0)
   price: number;
+}
+
+export class UpdateStoreCategoriesDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Debe seleccionar al menos una categoría' })
+  @IsString({ each: true, message: 'Cada categoría debe ser un texto' })
+  @IsNotEmpty({ each: true, message: 'Las categorías no pueden estar vacías' })
+  @Transform(({ value }) => {
+    // Eliminar duplicados y espacios en blanco
+    if (Array.isArray(value)) {
+      return [
+        ...new Set(
+          value.map((cat) => cat.trim()).filter((cat) => cat.length > 0),
+        ),
+      ];
+    }
+    return value;
+  })
+  categories: string[];
 }
 
 export class CreateUserDto {

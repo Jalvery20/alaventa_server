@@ -39,15 +39,13 @@ export class User extends Document {
   @Prop({ required: true })
   password: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   phoneNumber: string;
 
   @Prop()
   address: string;
 
   @Prop({
-    unique: true,
-    sparse: true, // Permite múltiples null/undefined
     lowercase: true,
     trim: true,
   })
@@ -135,6 +133,7 @@ function handleRoleAndCategories() {
       delivery: this.storeDetails?.delivery ?? null,
       contact: this.storeDetails?.contact || [],
       paymentMethods: this.storeDetails?.paymentMethods || [],
+      is24Hours: this.storeDetails?.is24Hours || false,
     };
   } else {
     // Para otros roles, eliminar los atributos específicos de 'tienda'

@@ -11,6 +11,7 @@ import { User } from './model/user.schema';
 import {
   PatchStoreDto,
   UpdatePasswordDto,
+  UpdateStoreCategoriesDto,
   UpdateStoreDto,
 } from './dto/user.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -105,6 +106,12 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
+    delete user.isAllowed;
+    delete user.expiryDate;
+
+    if (user.role === 'tienda') {
+      delete user.storeDetails?.categories;
+    }
 
     return user as User;
   }
@@ -159,6 +166,33 @@ export class UsersService {
    */
   async getUserById(id: string): Promise<User> {
     return this.findUserByIdOrFail(id);
+  }
+
+  /**
+   * Obtener categorias de la tienda por ID
+   */
+  async getStoreCategories(id: string): Promise<{ categories: string[] }> {
+    this.validateObjectId(id, 'ID de tienda');
+
+    const user = await this.userModel
+      .findById(id)
+      .select('name role storeDetails.categories')
+      .lean()
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException(`Tienda con ID: ${id} no encontrada`);
+    }
+
+    if (user.role !== 'tienda') {
+      throw new BadRequestException('El usuario no es una tienda');
+    }
+
+    const categories = user.storeDetails?.categories || [];
+
+    return {
+      categories,
+    };
   }
 
   /**
@@ -521,6 +555,10 @@ export class UsersService {
       if (d.location !== undefined) {
         updateObject['storeDetails.location'] = d.location;
       }
+
+      if (d.is24Hours !== undefined) {
+        updateObject['storeDetails.is24Hours'] = d.is24Hours;
+      }
     }
 
     // Procesar imagen si se proporciona
@@ -581,6 +619,82 @@ export class UsersService {
       }
       throw new InternalServerErrorException(
         `Error al actualizar tienda: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Actualizar categorías de una tienda
+   */
+  async updateStoreCategories(
+    id: string,
+    updateStoreCategoriesDto: UpdateStoreCategoriesDto,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    categories: string[];
+    previousCategories: string[];
+    changes: {
+      added: string[];
+      removed: string[];
+    };
+  }> {
+    // Validar que el usuario existe y es tienda
+    const user = await this.validateStoreUser(id);
+
+    // Obtener categorías anteriores
+    const previousCategories = user.storeDetails?.categories || [];
+    const newCategories = updateStoreCategoriesDto.categories;
+
+    // Calcular cambios para el log
+    const addedCategories = newCategories.filter(
+      (cat) => !previousCategories.includes(cat),
+    );
+    const removedCategories = previousCategories.filter(
+      (cat) => !newCategories.includes(cat),
+    );
+
+    try {
+      // Actualizar las categorías
+      const updatedUser = await this.userModel
+        .findByIdAndUpdate(
+          id,
+          {
+            $set: { 'storeDetails.categories': newCategories },
+          },
+          {
+            new: true,
+            runValidators: true,
+          },
+        )
+        .select('storeDetails.categories')
+        .exec();
+
+      if (!updatedUser) {
+        throw new InternalServerErrorException(
+          'Error al actualizar las categorías',
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Categorías actualizadas correctamente',
+        categories: updatedUser.storeDetails?.categories || [],
+        previousCategories,
+        changes: {
+          added: addedCategories,
+          removed: removedCategories,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Error al actualizar categorías: ${error.message}`,
       );
     }
   }
