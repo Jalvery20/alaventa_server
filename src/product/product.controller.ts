@@ -163,11 +163,34 @@ export class ProductController {
   }
 
   @Post()
-  @UseInterceptors(FilesInterceptor('images', 5)) // 5 es el límite de archivos
+  @UseGuards(UserGuard)
+  @UseInterceptors(FilesInterceptor('images', 5)) // Máximo 5 imágenes
+  @HttpCode(HttpStatus.CREATED)
   async crearProducto(
-    @Body(ValidationPipe) productoDto: CreateProductDto,
+    @Body(new ValidationPipe({ transform: true }))
+    productoDto: CreateProductDto,
     @UploadedFiles() images: Express.Multer.File[],
+    @Req() req,
   ): Promise<Product> {
+    // Verificar que el sellerId del DTO coincida con el usuario autenticado
+    const sellerId = req.user.userId;
+
+    if (productoDto.seller !== sellerId) {
+      throw new BadRequestException(
+        'No tienes permiso para crear productos para otro vendedor',
+      );
+    }
+
+    // Validar que se enviaron imágenes
+    if (!images || images.length === 0) {
+      throw new BadRequestException('Debe enviar al menos una imagen');
+    }
+
+    // Validar número máximo de imágenes
+    if (images.length > 5) {
+      throw new BadRequestException('Máximo 5 imágenes permitidas');
+    }
+
     return this.productService.crearProducto(productoDto, images);
   }
 
@@ -177,8 +200,16 @@ export class ProductController {
     @Param('id') id: string,
     @Body(ValidationPipe) productoDto: UpdateProductDto,
     @UploadedFiles() images: Express.Multer.File[],
+    @Req() req,
   ): Promise<Product | null> {
-    return this.productService.editarProducto(id, productoDto, images);
+    const sellerId = req.user.userId;
+
+    return this.productService.editarProducto(
+      id,
+      productoDto,
+      images,
+      sellerId,
+    );
   }
 
   /**

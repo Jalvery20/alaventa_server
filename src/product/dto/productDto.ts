@@ -9,8 +9,9 @@ import {
   IsBoolean,
   IsArray,
   ArrayMinSize,
+  IsNumber,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 // ============================================
 // CREATE PRODUCT DTO
@@ -23,18 +24,19 @@ export class CreateProductDto {
   })
   name: string;
 
-  @Transform(({ value }) => parseInt(value))
-  @IsInt({ message: 'El precio debe ser un número entero' })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'El precio debe ser un número' })
   @Min(1, { message: 'El precio debe ser mayor o igual a 1' })
   price: number;
 
   @IsOptional()
-  @Transform(({ value }) => (value ? parseInt(value) : undefined))
-  @IsInt({ message: 'El precio original debe ser un número entero' })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'El precio original debe ser un número' })
   @Min(1, { message: 'El precio original debe ser mayor o igual a 1' })
   originalPrice?: number;
 
-  @Transform(({ value }) => parseInt(value))
+  @Type(() => Number)
+  @IsNumber({}, { message: 'La cantidad debe ser un número' })
   @IsInt({ message: 'La cantidad debe ser un número entero' })
   @Min(0, { message: 'La cantidad debe ser mayor o igual a 0' })
   amount: number;
@@ -62,7 +64,7 @@ export class CreateProductDto {
   currencyType: string;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
+  @Type(() => Boolean)
   @IsBoolean({ message: 'isVisible debe ser un booleano' })
   isVisible?: boolean;
 }

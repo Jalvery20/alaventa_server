@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -27,6 +28,8 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectModel('User') private readonly userModel: Model<User>,
     @InjectModel('Product') private readonly productModel: Model<Product>,
@@ -117,7 +120,7 @@ export class UsersService {
   }
 
   /**
-   * Elimina imágenes de productos de Cloudinary
+   * Elimina imágenes de productos de Cloudinary usando bulk delete
    */
   private async deleteProductImages(products: Product[]): Promise<void> {
     if (!products?.length) return;
@@ -130,7 +133,32 @@ export class UsersService {
       this.cloudinaryService.extractPublicIdFromUrl(url),
     );
 
-    await this.cloudinaryService.eliminarImagenesCloudinary(publicIds);
+    const result = await this.cloudinaryService.bulkDeleteImages(publicIds);
+
+    if (result.failed.length > 0) {
+      this.logger.warn(
+        `No se pudieron eliminar ${result.failed.length} imágenes de productos`,
+        result.failed,
+      );
+    }
+  }
+
+  /**
+   * Eliminar imagen de tienda en background (no bloquea)
+   */
+  private async deleteStoreImageInBackground(imageUrl: string): Promise<void> {
+    if (!imageUrl) return;
+
+    try {
+      const publicId = this.cloudinaryService.extractPublicIdFromUrl(imageUrl);
+      await this.cloudinaryService.deleteImage(publicId);
+      this.logger.log(`Imagen de tienda eliminada: ${publicId}`);
+    } catch (error) {
+      // No lanzar error, solo logear (no es crítico)
+      this.logger.warn(
+        `No se pudo eliminar imagen anterior de tienda: ${error.message}`,
+      );
+    }
   }
 
   // ============================================
@@ -320,6 +348,7 @@ export class UsersService {
 
   /**
    * Actualizar tienda con imagen
+   * Orden seguro: Subir nueva → Guardar en DB → Eliminar antigua
    */
   async updateStore(
     id: string,
@@ -333,39 +362,40 @@ export class UsersService {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
 
-    let updatedStorePicUrl = user.storeDetails?.storePic || '';
+    // Guardar URL anterior para eliminar después si hay nueva imagen
+    const previousStorePicUrl = user.storeDetails?.storePic;
+    let newStorePicUrl = previousStorePicUrl || '';
 
-    // Procesar nueva imagen si se proporciona
+    // Paso 1: Subir nueva imagen PRIMERO (si se proporciona)
     if (storePic) {
-      // Eliminar imagen anterior y subir nueva en paralelo
-      const [uploadResult] = await Promise.all([
-        this.cloudinaryService.uploadStorePic([storePic]),
-        user.storeDetails?.storePic
-          ? this.cloudinaryService
-              .deleteImage(
-                this.cloudinaryService.extractPublicIdFromUrl(
-                  user.storeDetails.storePic,
-                ),
-              )
-              .catch((err) =>
-                console.error('Error eliminando imagen anterior:', err),
-              )
-          : Promise.resolve(),
-      ]);
+      try {
+        const uploadResult = await this.cloudinaryService.uploadStorePic([
+          storePic,
+        ]);
 
-      if (uploadResult?.length > 0) {
-        updatedStorePicUrl = uploadResult[0].secure_url;
+        if (uploadResult.success.length > 0) {
+          newStorePicUrl = uploadResult.success[0].secure_url;
+        } else {
+          throw new BadRequestException(
+            'No se pudo subir la imagen de la tienda',
+          );
+        }
+      } catch (error) {
+        this.logger.error('Error al subir imagen de tienda:', error);
+        throw new BadRequestException(
+          `Error al subir imagen: ${error.message}`,
+        );
       }
     }
 
-    // Construir objeto de actualización
+    // Paso 2: Construir objeto de actualización
     const updateData = {
       name: updateStoreDto.name || user.name,
       address: updateStoreDto.address || user.address,
       province: updateStoreDto.province || user.province,
       municipality: updateStoreDto.municipality || user.municipality,
       storeDetails: {
-        storePic: updatedStorePicUrl,
+        storePic: newStorePicUrl,
         schedule: updateStoreDto.schedule ?? user.storeDetails?.schedule,
         description:
           updateStoreDto.description ?? user.storeDetails?.description,
@@ -375,12 +405,39 @@ export class UsersService {
       },
     };
 
-    const updatedUser = await this.userModel
-      .findByIdAndUpdate(id, updateData, { new: true })
-      .select('-password')
-      .exec();
+    try {
+      // Paso 3: Actualizar en DB
+      const updatedUser = await this.userModel
+        .findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
+        .select('-password')
+        .exec();
 
-    return updatedUser;
+      // Paso 4: AHORA SÍ eliminar imagen anterior (en background)
+      if (
+        storePic &&
+        previousStorePicUrl &&
+        previousStorePicUrl !== newStorePicUrl
+      ) {
+        // No await - ejecutar en background
+        this.deleteStoreImageInBackground(previousStorePicUrl);
+      }
+
+      return updatedUser;
+    } catch (error) {
+      //  Rollback: Si falla actualizar DB, eliminar imagen nueva
+      if (
+        storePic &&
+        newStorePicUrl &&
+        newStorePicUrl !== previousStorePicUrl
+      ) {
+        this.logger.warn('Ejecutando rollback de imagen nueva...');
+        this.deleteStoreImageInBackground(newStorePicUrl);
+      }
+
+      throw new InternalServerErrorException(
+        `Error al actualizar tienda: ${error.message}`,
+      );
+    }
   }
 
   /**
@@ -489,6 +546,9 @@ export class UsersService {
   // PATCH STORE - Con soporte para imagen
   // ============================================
 
+  /**
+   * Patch Store con manejo seguro de imágenes
+   */
   async patchStore(
     id: string,
     patchStoreDto: PatchStoreDto,
@@ -501,6 +561,10 @@ export class UsersService {
     if (patchStoreDto.email) {
       await this.checkEmailUnique(patchStoreDto.email, id);
     }
+
+    // Guardar URL anterior
+    const previousImageUrl = user.storeDetails?.storePic;
+    let newImageUrl: string | null = null;
 
     // Construir objeto de actualización con dot notation
     const updateObject: Record<string, any> = {};
@@ -547,46 +611,32 @@ export class UsersService {
       if (d.categories !== undefined) {
         updateObject['storeDetails.categories'] = d.categories;
       }
-
       if (d.deliveryOptions !== undefined) {
         updateObject['storeDetails.deliveryOptions'] = d.deliveryOptions;
       }
-
       if (d.location !== undefined) {
         updateObject['storeDetails.location'] = d.location;
       }
-
       if (d.is24Hours !== undefined) {
         updateObject['storeDetails.is24Hours'] = d.is24Hours;
       }
     }
 
-    // Procesar imagen si se proporciona
+    // Paso 1: Subir nueva imagen PRIMERO (si se proporciona)
     if (storePic) {
       try {
-        const previousImageUrl = user.storeDetails?.storePic;
-
-        // Subir nueva imagen y eliminar anterior en paralelo
-        const [uploadResult] = await Promise.all([
-          this.cloudinaryService.uploadStorePic([storePic]),
-          previousImageUrl
-            ? this.cloudinaryService
-                .deleteImage(
-                  this.cloudinaryService.extractPublicIdFromUrl(
-                    previousImageUrl,
-                  ),
-                )
-                .catch((err) =>
-                  console.error('Error eliminando imagen anterior:', err),
-                )
-            : Promise.resolve(),
+        const uploadResult = await this.cloudinaryService.uploadStorePic([
+          storePic,
         ]);
 
-        if (uploadResult?.length > 0) {
-          updateObject['storeDetails.storePic'] = uploadResult[0].secure_url;
+        if (uploadResult.success.length > 0) {
+          newImageUrl = uploadResult.success[0].secure_url;
+          updateObject['storeDetails.storePic'] = newImageUrl;
+        } else {
+          throw new BadRequestException('No se pudo subir la imagen');
         }
       } catch (error) {
-        console.error('Error procesando imagen:', error);
+        this.logger.error('Error procesando imagen:', error);
         throw new InternalServerErrorException('Error al procesar la imagen');
       }
     }
@@ -599,6 +649,7 @@ export class UsersService {
     }
 
     try {
+      // Paso 2: Actualizar en DB
       const updatedUser = await this.userModel
         .findByIdAndUpdate(
           id,
@@ -608,12 +659,24 @@ export class UsersService {
         .select('-password')
         .exec();
 
+      // Paso 3: AHORA SÍ eliminar imagen anterior (en background)
+      if (newImageUrl && previousImageUrl && previousImageUrl !== newImageUrl) {
+        // No await - ejecutar en background
+        this.deleteStoreImageInBackground(previousImageUrl);
+      }
+
       return {
         success: true,
         data: updatedUser,
         message: 'Tienda actualizada correctamente',
       };
     } catch (error) {
+      // Rollback: Si falla actualizar DB, eliminar imagen nueva
+      if (newImageUrl) {
+        this.logger.warn('Ejecutando rollback de imagen nueva...');
+        this.deleteStoreImageInBackground(newImageUrl);
+      }
+
       if (error.code === 11000 && error.keyPattern?.email) {
         throw new ConflictException('El email ya está registrado');
       }
@@ -727,6 +790,7 @@ export class UsersService {
 
   /**
    * Eliminar usuario y sus productos
+   * Orden seguro: DB primero, Cloudinary después
    */
   async deleteUser(
     id: string,
@@ -745,19 +809,47 @@ export class UsersService {
       .lean()
       .exec();
 
+    // Obtener imagen de tienda si existe
+    const storePicUrl = user.storeDetails?.storePic;
+
     try {
-      // Eliminar imágenes de Cloudinary, productos y usuario en paralelo
+      // Paso 1: Eliminar de DB primero (transaccionalmente)
       await Promise.all([
-        this.deleteProductImages(products as Product[]),
         this.productModel.deleteMany({ seller: id }).exec(),
         this.userModel.findByIdAndDelete(id).exec(),
       ]);
+
+      // Paso 2: AHORA eliminar imágenes de Cloudinary (en background)
+      // No bloquear el response, ejecutar en background
+      setImmediate(async () => {
+        try {
+          // Eliminar imágenes de productos
+          if (products.length > 0) {
+            await this.deleteProductImages(products as Product[]);
+            this.logger.log(
+              `Eliminadas imágenes de ${products.length} productos del usuario ${id}`,
+            );
+          }
+
+          // Eliminar imagen de tienda
+          if (storePicUrl) {
+            await this.deleteStoreImageInBackground(storePicUrl);
+          }
+        } catch (error) {
+          // Solo logear, no lanzar (ya se eliminó de DB)
+          this.logger.error(
+            `Error al eliminar imágenes del usuario ${id}:`,
+            error,
+          );
+        }
+      });
 
       return {
         message: 'Usuario eliminado correctamente',
         deletedProductsCount: products.length,
       };
     } catch (error) {
+      this.logger.error(`Error al eliminar usuario ${id}:`, error);
       throw new InternalServerErrorException(
         `Error al eliminar usuario: ${error.message}`,
       );

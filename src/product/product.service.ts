@@ -1,7 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -51,6 +54,8 @@ export interface SellerProductsResponse {
 
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
+
   constructor(
     @InjectModel('Product') private readonly productModel: Model<Product>,
     @InjectModel('User') private readonly userModel: Model<User>,
@@ -117,6 +122,34 @@ export class ProductService {
       );
     }
     return product;
+  }
+
+  /**
+   * Eliminar imágenes en background sin bloquear response
+   */
+  private async eliminarImagenesEnBackground(urls: string[]): Promise<void> {
+    try {
+      const publicIds = urls.map((url) =>
+        this.cloudinaryService.extractPublicIdFromUrl(url),
+      );
+
+      const deleteResult =
+        await this.cloudinaryService.bulkDeleteImages(publicIds);
+
+      if (deleteResult.failed.length > 0) {
+        this.logger.warn(
+          `No se pudieron eliminar ${deleteResult.failed.length} imagen(es) antiguas`,
+          deleteResult.failed,
+        );
+      } else {
+        this.logger.log(
+          `${deleteResult.deleted.length} imagen(es) antiguas eliminadas`,
+        );
+      }
+    } catch (error) {
+      // No lanzar error, solo logear
+      this.logger.error('Error al eliminar imágenes en background:', error);
+    }
   }
 
   // ============================================
@@ -607,30 +640,77 @@ export class ProductService {
   }
 
   /**
-   * Crear nuevo producto
+   * Crear nuevo producto con subida de imágenes
    */
   async crearProducto(
     productoDto: CreateProductDto,
     imagenes: Express.Multer.File[],
   ): Promise<Product> {
-    // Validar seller ID si existe en el DTO
-    if (productoDto.seller) {
-      this.validateObjectId(productoDto.seller.toString(), 'ID de vendedor');
+    // Validar seller ID
+    this.validateObjectId(productoDto.seller.toString(), 'ID de vendedor');
+
+    // Verificar que el vendedor existe y tiene permisos
+    const seller = await this.userModel
+      .findById(productoDto.seller)
+      .lean()
+      .exec();
+
+    if (!seller) {
+      throw new NotFoundException(
+        `Vendedor con ID ${productoDto.seller} no encontrado`,
+      );
     }
 
-    if (!imagenes || imagenes.length === 0) {
-      throw new BadRequestException('Debe proporcionar al menos una imagen');
+    if (!seller.isAllowed) {
+      throw new ForbiddenException(
+        'El vendedor no tiene permisos para crear productos',
+      );
+    }
+
+    // Validar precio original si existe
+    if (
+      productoDto.originalPrice &&
+      productoDto.originalPrice <= productoDto.price
+    ) {
+      throw new BadRequestException(
+        'El precio original debe ser mayor al precio de venta',
+      );
     }
 
     // Subir imágenes a Cloudinary
-    const imagenesSubidas = await this.cloudinaryService.uploadImages(imagenes);
-
-    const nuevoProducto = new this.productModel({
-      ...productoDto,
-      imgUrl: imagenesSubidas.map((img) => img.secure_url),
+    const uploadResult = await this.cloudinaryService.uploadImages(imagenes, {
+      folder: 'product',
+      maxWidth: 2000,
+      quality: 85,
     });
 
-    return await nuevoProducto.save();
+    // Verificar si hubo fallos
+    if (uploadResult.failed.length > 0) {
+      this.logger.warn(
+        `${uploadResult.failed.length} imágenes fallaron`,
+        uploadResult.failed,
+      );
+    }
+
+    // Usar solo las exitosas
+    const nuevoProducto = new this.productModel({
+      ...productoDto,
+      imgUrl: uploadResult.success.map((img) => img.secure_url),
+    });
+
+    try {
+      return await nuevoProducto.save();
+    } catch (error) {
+      // Rollback: eliminar imágenes usando bulk delete (más rápido)
+      const publicIds = uploadResult.success.map((img) =>
+        this.cloudinaryService.extractPublicIdFromUrl(img.secure_url),
+      );
+      await this.cloudinaryService.bulkDeleteImages(publicIds);
+
+      throw new BadRequestException(
+        `Error al crear producto: ${error.message}`,
+      );
+    }
   }
 
   /**
@@ -640,10 +720,12 @@ export class ProductService {
     id: string,
     productoDto: UpdateProductDto,
     imagenes: Express.Multer.File[],
+    sellerId: string,
   ): Promise<Product> {
     // Validar ObjectId
     this.validateObjectId(id, 'ID de producto');
 
+    // Obtener producto existente
     const productoExistente = await this.productModel
       .findById(id)
       .lean()
@@ -653,52 +735,167 @@ export class ProductService {
       throw new NotFoundException(`Producto con ID ${id} no encontrado`);
     }
 
-    const updateData: any = {
-      ...productoDto,
-      createdAt: Date.now(),
-    };
-
-    // Si hay nuevas imágenes, eliminar las antiguas y subir las nuevas
-    if (imagenes && imagenes.length > 0) {
-      // Ejecutar eliminación y subida en paralelo
-      const [imagenesSubidas] = await Promise.all([
-        this.cloudinaryService.uploadImages(imagenes),
-        this.eliminarImagenesProducto(productoExistente.imgUrl),
-      ]);
-
-      updateData.imgUrl = imagenesSubidas.map((img) => img.secure_url);
+    // Verificar ownership
+    if (productoExistente.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        'No tienes permiso para editar este producto',
+      );
     }
 
-    const updatedProduct = await this.productModel
-      .findByIdAndUpdate(id, updateData, { new: true })
-      .lean()
-      .exec();
+    // Validar precio original si se proporciona
+    if (
+      productoDto.originalPrice !== undefined &&
+      productoDto.price !== undefined &&
+      productoDto.originalPrice <= productoDto.price
+    ) {
+      throw new BadRequestException(
+        'El precio original debe ser mayor al precio de venta',
+      );
+    }
 
-    return updatedProduct;
+    // Preparar datos de actualización
+    const updateData: any = { ...productoDto };
+
+    let imagenesAntiguasParaEliminar: string[] = [];
+
+    // Manejo seguro de imágenes
+    if (imagenes && imagenes.length > 0) {
+      // Validar número de imágenes
+      if (imagenes.length > 5) {
+        throw new BadRequestException('Máximo 5 imágenes permitidas');
+      }
+
+      try {
+        // Paso 1: Subir nuevas imágenes PRIMERO
+        const uploadResult = await this.cloudinaryService.uploadImages(
+          imagenes,
+          {
+            folder: 'product',
+            maxWidth: 2000,
+            quality: 85,
+          },
+        );
+
+        // Verificar que se subieron correctamente
+        if (uploadResult.success.length === 0) {
+          throw new BadRequestException(
+            'No se pudo subir ninguna imagen nueva',
+          );
+        }
+
+        // Advertir si algunas fallaron
+        if (uploadResult.failed.length > 0) {
+          this.logger.warn(
+            `${uploadResult.failed.length} imagen(es) fallaron al subir`,
+            uploadResult.failed,
+          );
+        }
+
+        // Paso 2: Actualizar URLs en el objeto
+        updateData.imgUrl = uploadResult.success.map((img) => img.secure_url);
+
+        // Paso 3: Marcar imágenes antiguas para eliminar DESPUÉS
+        imagenesAntiguasParaEliminar = productoExistente.imgUrl || [];
+      } catch (error) {
+        this.logger.error('Error al subir nuevas imágenes:', error);
+        throw new BadRequestException(
+          `Error al subir imágenes: ${error.message}`,
+        );
+      }
+    }
+
+    try {
+      // Paso 4: Actualizar producto en DB
+      const updatedProduct = await this.productModel
+        .findByIdAndUpdate(id, updateData, {
+          new: true,
+          runValidators: true, // Ejecutar validaciones del schema
+        })
+        .populate({
+          path: 'seller',
+          select: 'name phoneNumber role province municipality',
+        })
+        .lean()
+        .exec();
+
+      // Paso 5: AHORA SÍ eliminar imágenes antiguas (en background)
+      if (imagenesAntiguasParaEliminar.length > 0) {
+        // No await - ejecutar en background
+        this.eliminarImagenesEnBackground(imagenesAntiguasParaEliminar);
+      }
+
+      return updatedProduct;
+    } catch (error) {
+      this.logger.error(`Error al actualizar producto ${id}:`, error);
+
+      // 🔥 Rollback: Si falla actualizar DB, eliminar imágenes nuevas
+      if (updateData.imgUrl && updateData.imgUrl.length > 0) {
+        this.logger.warn('Ejecutando rollback de imágenes nuevas...');
+        const publicIds = updateData.imgUrl.map((url: string) =>
+          this.cloudinaryService.extractPublicIdFromUrl(url),
+        );
+        await this.cloudinaryService.bulkDeleteImages(publicIds);
+      }
+
+      throw new BadRequestException(
+        `Error al actualizar producto: ${error.message}`,
+      );
+    }
   }
 
   /**
    * Eliminar producto
    */
-  async eliminarProducto(id: string, sellerId?: string): Promise<Product> {
+  async eliminarProducto(id: string, sellerId: string): Promise<Product> {
+    // Validar ObjectId
     this.validateObjectId(id, 'ID de producto');
 
+    // Obtener producto
     const producto = await this.productModel.findById(id).lean().exec();
-    if (!producto)
-      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
 
-    if (sellerId && producto.seller.toString() !== sellerId) {
+    if (!producto) {
+      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    }
+
+    // Verificar ownership
+    if (producto.seller.toString() !== sellerId) {
       throw new ForbiddenException(
         'No tienes permiso para eliminar este producto',
       );
     }
 
-    await Promise.all([
-      this.eliminarImagenesProducto(producto.imgUrl),
-      this.productModel.findByIdAndDelete(id).exec(),
-    ]);
+    try {
+      //  Paso 1: Eliminar de la base de datos primero
+      await this.productModel.findByIdAndDelete(id).exec();
 
-    return producto;
+      //  Paso 2: Luego eliminar imágenes de Cloudinary
+      if (producto.imgUrl && producto.imgUrl.length > 0) {
+        const publicIds = producto.imgUrl.map((url) =>
+          this.cloudinaryService.extractPublicIdFromUrl(url),
+        );
+
+        // Usar bulk delete (más rápido)
+        const deleteResult =
+          await this.cloudinaryService.bulkDeleteImages(publicIds);
+
+        // Logear si hubo fallos (no crítico)
+        if (deleteResult.failed.length > 0) {
+          this.logger.warn(
+            `No se pudieron eliminar ${deleteResult.failed.length} imagen(es) del producto ${id}`,
+            deleteResult.failed,
+          );
+        }
+      }
+
+      return producto;
+    } catch (error) {
+      // Si falla eliminar de DB, no intentar eliminar de Cloudinary
+      this.logger.error(`Error al eliminar producto ${id}:`, error);
+      throw new HttpException(
+        `Error al eliminar producto: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
@@ -787,22 +984,21 @@ export class ProductService {
 
     const products = await this.productModel
       .find({ _id: { $in: productIds }, seller: sellerId })
-      .select('_id imgUrl')
+      .select('imgUrl')
       .lean()
       .exec();
 
-    if (products.length === 0) {
-      throw new NotFoundException('No se encontraron productos para eliminar');
-    }
+    // Extraer todos los publicIds
+    const allPublicIds = products
+      .flatMap((p) => p.imgUrl || [])
+      .map((url) => this.cloudinaryService.extractPublicIdFromUrl(url));
 
-    const allImageUrls = products.flatMap((p) => p.imgUrl || []);
+    // Eliminar usando bulk API (mucho más rápido)
+    await this.cloudinaryService.bulkDeleteImages(allPublicIds);
 
-    await Promise.all([
-      this.eliminarImagenesProducto(allImageUrls),
-      this.productModel.deleteMany({
-        _id: { $in: products.map((p) => p._id) },
-      }),
-    ]);
+    await this.productModel.deleteMany({
+      _id: { $in: productIds },
+    });
 
     return { success: true, deletedCount: products.length };
   }
