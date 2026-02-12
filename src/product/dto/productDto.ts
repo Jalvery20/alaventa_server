@@ -254,3 +254,21 @@ export interface ProductFilter {
   isVisible?: boolean;
   amount?: any;
 }
+
+export class ExportProductsDto {
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsIn(['all', 'available', 'out-of-stock', 'hidden'])
+  status?: 'all' | 'available' | 'out-of-stock' | 'hidden';
+
+  @IsOptional()
+  @IsString()
+  dateFrom?: string; // ISO date string
+
+  @IsOptional()
+  @IsString()
+  dateTo?: string; // ISO date string
+}

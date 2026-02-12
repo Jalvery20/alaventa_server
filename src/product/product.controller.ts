@@ -28,6 +28,7 @@ import {
   BulkVisibilityDto,
   CategoryProductDto,
   CreateProductDto,
+  ExportProductsDto,
   ProductSearchDto,
   SellerProductsQueryDto,
   StoreCategoryProductDto,
@@ -162,6 +163,37 @@ export class ProductController {
     );
   }
 
+  /**
+   * GET /product/export/data
+   * Obtener datos para exportar a Excel
+   */
+  @Get('/export/data')
+  @UseGuards(UserGuard)
+  async getProductsForExport(
+    @Req() req,
+    @Query(new ValidationPipe({ transform: true }))
+    query: ExportProductsDto,
+  ) {
+    const sellerId = req.user.userId;
+
+    if (!sellerId) {
+      throw new BadRequestException('No se pudo obtener el ID del vendedor');
+    }
+
+    const products = await this.productService.getProductsForExport(sellerId, {
+      category: query.category,
+      status: query.status,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    });
+
+    return {
+      success: true,
+      count: products.length,
+      data: products,
+    };
+  }
+
   @Post()
   @UseGuards(UserGuard)
   @UseInterceptors(FilesInterceptor('images', 5)) // Máximo 5 imágenes
@@ -195,6 +227,7 @@ export class ProductController {
   }
 
   @Put(':id')
+  @UseGuards(UserGuard)
   @UseInterceptors(FilesInterceptor('images', 5)) // 5 es el límite de archivos
   async editarProducto(
     @Param('id') id: string,

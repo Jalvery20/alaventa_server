@@ -36,6 +36,18 @@ export interface DashboardStats {
   topCategories: CategoryStats[];
 }
 
+export interface ProductExportData {
+  name: string;
+  category: string;
+  price: number;
+  originalPrice?: number;
+  currencyType: string;
+  amount: number;
+  isVisible: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface SellerProductsResponse {
   products: Product[];
   pagination: {
@@ -1001,5 +1013,78 @@ export class ProductService {
     });
 
     return { success: true, deletedCount: products.length };
+  }
+
+  /**
+   * Obtener datos de productos para exportar a Excel
+   */
+  async getProductsForExport(
+    sellerId: string,
+    filters?: {
+      category?: string;
+      status?: 'all' | 'available' | 'out-of-stock' | 'hidden';
+      dateFrom?: string;
+      dateTo?: string;
+    },
+  ): Promise<ProductExportData[]> {
+    this.validateObjectId(sellerId, 'ID de vendedor');
+
+    // Construir filtro
+    const filter: Record<string, any> = { seller: sellerId };
+
+    // Filtro por estado
+    if (filters?.status) {
+      switch (filters.status) {
+        case 'available':
+          filter.amount = { $gt: 0 };
+          filter.isVisible = true;
+          break;
+        case 'out-of-stock':
+          filter.amount = 0;
+          break;
+        case 'hidden':
+          filter.isVisible = false;
+          break;
+      }
+    }
+
+    // Filtro por categoría
+    if (filters?.category && filters.category !== 'all') {
+      filter.category = filters.category;
+    }
+
+    // Filtro por rango de fechas
+    if (filters?.dateFrom || filters?.dateTo) {
+      filter.createdAt = {};
+      if (filters.dateFrom) {
+        filter.createdAt.$gte = new Date(filters.dateFrom);
+      }
+      if (filters.dateTo) {
+        filter.createdAt.$lte = new Date(filters.dateTo);
+      }
+    }
+
+    // Consultar solo los campos necesarios para el Excel
+    const products = await this.productModel
+      .find(filter)
+      .select(
+        'name category price originalPrice currencyType amount isVisible createdAt updatedAt',
+      )
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    // Mapear a formato simplificado
+    return products.map((product) => ({
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      originalPrice: product.originalPrice,
+      currencyType: product.currencyType,
+      amount: product.amount,
+      isVisible: product.isVisible,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    }));
   }
 }

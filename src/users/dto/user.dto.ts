@@ -19,6 +19,10 @@ import {
   ArrayMaxSize,
   ValidateIf,
   ArrayMinSize,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
 } from 'class-validator';
 
 // ============================================
@@ -322,33 +326,41 @@ export class UpdateUserExpiryDateDto {
   expiryDate: Date;
 }
 
+// Validador custom para confirmar contraseñas
+@ValidatorConstraint({ name: 'MatchesPassword', async: false })
+class MatchesPasswordConstraint implements ValidatorConstraintInterface {
+  validate(confirmPassword: string, args: ValidationArguments) {
+    const object = args.object as UpdatePasswordDto;
+    return confirmPassword === object.newPassword;
+  }
+
+  defaultMessage() {
+    return 'Las contraseñas no coinciden';
+  }
+}
+
 export class UpdatePasswordDto {
   @IsString({ message: 'La contraseña actual debe ser una cadena de texto' })
-  @MinLength(8, {
-    message: 'La contraseña actual debe tener al menos 8 caracteres',
-  })
-  @MaxLength(20, {
-    message: 'La contraseña actual no debe tener más de 20 caracteres',
-  })
+  @MinLength(1, { message: 'La contraseña actual es requerida' })
   currentPassword: string;
 
   @IsString({ message: 'La nueva contraseña debe ser una cadena de texto' })
   @MinLength(8, {
     message: 'La nueva contraseña debe tener al menos 8 caracteres',
   })
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$%*?.&]{8,}$/, {
-    message:
-      'La nueva contraseña debe tener al menos 8 caracteres, incluyendo números, letras mayúsculas y minúsculas',
+  @MaxLength(50, {
+    message: 'La nueva contraseña no debe tener más de 50 caracteres',
+  })
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$/, {
+    message: 'La nueva contraseña debe incluir letras y números',
   })
   newPassword: string;
 
   @IsString({
-    message:
-      'La confirmación de la nueva contraseña debe ser una cadena de texto',
+    message: 'La confirmación de la contraseña debe ser una cadena de texto',
   })
-  @MinLength(8, {
-    message:
-      'La confirmación de la nueva contraseña debe tener al menos 8 caracteres',
+  @Validate(MatchesPasswordConstraint, {
+    message: 'Las contraseñas no coinciden',
   })
   confirmPassword: string;
 }

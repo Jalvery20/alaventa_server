@@ -6,8 +6,8 @@ interface UploadOptions {
   folder: string;
   maxWidth?: number;
   maxHeight?: number;
-  quality?: number | 'auto';
-  format?: 'auto' | 'jpg' | 'png' | 'webp';
+  quality?: number | 'auto:good' | 'auto:best' | 'auto:eco';
+  format?: 'jpg' | 'png' | 'webp';
 }
 
 interface UploadResult {
@@ -29,8 +29,8 @@ export class CloudinaryService {
     maxFileSize: 5 * 1024 * 1024, // 5MB
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'],
     maxWidth: 2000,
-    quality: 'auto' as const,
-    format: 'auto' as const,
+    quality: 'auto:good' as const,
+    format: undefined,
   };
 
   /**
@@ -72,8 +72,11 @@ export class CloudinaryService {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: options.folder,
+          resource_type: 'image',
           quality: options.quality || this.DEFAULT_CONFIG.quality,
-          format: options.format || this.DEFAULT_CONFIG.format,
+
+          // Solo especificar formato si es uno concreto (no 'auto')
+          ...(options.format ? { format: options.format } : {}),
           // Transformaciones para optimizar
           transformation: [
             {
@@ -87,10 +90,22 @@ export class CloudinaryService {
           ],
           // Generar thumbnails automáticamente
           eager: [
-            { width: 300, height: 300, crop: 'fill' },
-            { width: 800, height: 600, crop: 'limit' },
+            {
+              width: 300,
+              height: 300,
+              crop: 'fill',
+              quality: 'auto:good',
+              fetch_format: 'auto', // Convertirá a WebP si el navegador lo soporta
+            },
+            {
+              width: 800,
+              height: 600,
+              crop: 'limit',
+              quality: 'auto:good',
+              fetch_format: 'auto',
+            },
           ],
-          eager_async: true, // Generar en background
+          eager_async: true,
         },
         (error, result) => {
           if (error) {
@@ -114,7 +129,7 @@ export class CloudinaryService {
   }
 
   /**
-   * 🔥 OPTIMIZADO: Subir múltiples imágenes en paralelo con manejo de errores
+   * Subir múltiples imágenes en paralelo con manejo de errores
    */
   async uploadImages(
     files: Express.Multer.File[],
