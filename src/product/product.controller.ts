@@ -54,7 +54,7 @@ export class ProductController {
   }
   @Get('/stats')
   @UseGuards(UserGuard)
-  async getAdminStats(@Req() req): Promise<DashboardStats> {
+  async getSellerStats(@Req() req): Promise<DashboardStats> {
     // El UserGuard ya añadió el usuario decodificado en req.user
     const sellerId = req.user.userId;
 

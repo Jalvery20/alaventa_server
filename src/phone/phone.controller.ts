@@ -8,7 +8,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { PhoneDto } from './dto/phone.dto';
-import { PhoneService } from './phone.service'; // Asegúrate de importar el servicio
+import { PhoneService } from './phone.service';
 import { AdminGuard } from 'src/guards/admin.guard';
 
 @Controller('phone')

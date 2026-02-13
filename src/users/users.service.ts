@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { isValidObjectId, Model } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { User } from './model/user.schema';
 import {
   PatchStoreDto,
@@ -26,6 +26,78 @@ import {
 import { Product } from 'src/product/model/product.schema';
 import * as bcrypt from 'bcryptjs';
 
+export interface PlatformStats {
+  // Usuarios
+  users: {
+    total: number;
+    newThisMonth: number;
+    withEmail: number;
+    byRole: {
+      administrador: number;
+      tienda: number;
+      vendedor: number;
+    };
+  };
+
+  // Tiendas
+  stores: {
+    total: number;
+    active: number;
+    pending: number;
+    expired: number;
+    expiringSoon: number;
+  };
+
+  // Productos
+  products: {
+    total: number;
+    available: number;
+    outOfStock: number;
+    averagePerStore: number;
+  };
+
+  // Crecimiento (solo tiendas y vendedores)
+  growth: {
+    usersThisMonth: number;
+    usersLastMonth: number;
+    usersPercentage: number;
+    storesThisMonth: number;
+    storesLastMonth: number;
+    storesPercentage: number;
+  };
+
+  // Usuarios recientes (excluye al admin actual)
+  recentUsers: Array<{
+    _id: string;
+    name: string;
+    phoneNumber: string;
+    role: string;
+    province: string;
+    municipality: string;
+    createdAt: Date;
+    isAllowed: boolean;
+    expiryDate?: Date;
+    productsCount: number;
+  }>;
+
+  // Top tiendas por productos
+  topStores: Array<{
+    _id: string;
+    name: string;
+    province: string;
+    productsCount: number;
+    isAllowed: boolean;
+  }>;
+
+  // Alertas
+  alerts: {
+    pendingApprovals: number;
+    expiringSoon: number;
+    expiredStores: number;
+    storesWithoutProducts: number;
+  };
+}
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -39,6 +111,139 @@ export class UsersService {
   // ============================================
   // MÉTODOS AUXILIARES PRIVADOS
   // ============================================
+
+  /**
+   * Calcular porcentaje de crecimiento
+   */
+  private calculateGrowthPercentage(current: number, previous: number): number {
+    if (previous === 0) {
+      return current > 0 ? 100 : 0;
+    }
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  /**
+   * Obtener usuarios recientes con conteo de productos
+   * Excluye al administrador actual del listado
+   */
+  private async getRecentUsersWithProductCount(
+    limit: number,
+    excludeUserId: Types.ObjectId,
+  ): Promise<
+    Array<{
+      _id: string;
+      name: string;
+      phoneNumber: string;
+      role: string;
+      province: string;
+      municipality: string;
+      createdAt: Date;
+      isAllowed: boolean;
+      expiryDate?: Date;
+      productsCount: number;
+    }>
+  > {
+    const users = await this.userModel.aggregate([
+      // Excluir solo al usuario actual (muestra otros admins si existen)
+      { $match: { _id: { $ne: excludeUserId } } },
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: 'seller',
+          as: 'products',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: { $ifNull: ['$name', 'Sin nombre'] },
+          phoneNumber: 1,
+          role: 1,
+          province: { $ifNull: ['$province', ''] },
+          municipality: { $ifNull: ['$municipality', ''] },
+          createdAt: 1,
+          isAllowed: { $ifNull: ['$isAllowed', true] },
+          expiryDate: 1,
+          productsCount: { $size: '$products' },
+        },
+      },
+    ]);
+
+    return users;
+  }
+
+  /**
+   * Obtener top tiendas por cantidad de productos
+   */
+  private async getTopStoresByProducts(limit: number): Promise<
+    Array<{
+      _id: string;
+      name: string;
+      province: string;
+      productsCount: number;
+      isAllowed: boolean;
+    }>
+  > {
+    const stores = await this.userModel.aggregate([
+      { $match: { role: 'tienda' } },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: 'seller',
+          as: 'products',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: { $ifNull: ['$name', 'Sin nombre'] },
+          province: { $ifNull: ['$province', ''] },
+          isAllowed: { $ifNull: ['$isAllowed', true] },
+          productsCount: { $size: '$products' },
+        },
+      },
+      { $sort: { productsCount: -1 } },
+      { $limit: limit },
+    ]);
+
+    return stores;
+  }
+
+  /**
+   * Contar tiendas sin productos
+   */
+  private async getStoresWithoutProducts(
+    excludeUserId?: Types.ObjectId,
+  ): Promise<number> {
+    const matchFilter: Record<string, any> = {
+      role: 'tienda',
+      isAllowed: true,
+    };
+
+    if (excludeUserId) {
+      matchFilter._id = { $ne: excludeUserId };
+    }
+
+    const result = await this.userModel.aggregate([
+      { $match: matchFilter },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: 'seller',
+          as: 'products',
+        },
+      },
+      { $match: { products: { $size: 0 } } },
+      { $count: 'total' },
+    ]);
+
+    return result[0]?.total || 0;
+  }
 
   /**
    * Valida que el usuario sea una tienda
@@ -164,6 +369,233 @@ export class UsersService {
   // ============================================
   // MÉTODOS DE LECTURA
   // ============================================
+
+  /**
+   * Obtener todas las estadísticas de la plataforma en una sola consulta
+   * Optimizado con Promise.all para ejecutar queries en paralelo
+   */
+  async getPlatformStats(currentUserId: string): Promise<PlatformStats> {
+    try {
+      // Validar ID
+      if (!isValidObjectId(currentUserId)) {
+        throw new BadRequestException('ID de usuario inválido');
+      }
+
+      const currentUserObjectId = new Types.ObjectId(currentUserId);
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() - 1,
+        1,
+      );
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      const sevenDaysFromNow = new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000,
+      );
+
+      // Filtro para excluir al usuario actual (solo para listados)
+      const excludeCurrentUser = { _id: { $ne: currentUserObjectId } };
+
+      // Filtro para usuarios de plataforma (sin admins, sin el actual)
+      const platformUsersFilter = {
+        ...excludeCurrentUser,
+        role: { $ne: 'administrador' },
+      };
+
+      // Ejecutar TODAS las queries en paralelo
+      const [
+        // === USUARIOS (conteos SIN excluir al actual) ===
+        totalUsers,
+        usersWithEmail,
+        usersByRole,
+
+        // === USUARIOS DE PLATAFORMA (sin admins, para growth) ===
+        platformUsersThisMonth,
+        platformUsersLastMonth,
+
+        // === TIENDAS ===
+        totalStores,
+        activeStores,
+        pendingStores,
+        expiredStores,
+        expiringSoonStores,
+        storesThisMonth,
+        storesLastMonth,
+        storesWithoutProducts,
+
+        // === PRODUCTOS ===
+        totalProducts,
+        availableProducts,
+        outOfStockProducts,
+
+        // === DATOS COMPUESTOS (excluyen al actual) ===
+        recentUsersWithProducts,
+        topStoresByProducts,
+      ] = await Promise.all([
+        // Total usuarios (SIN excluir al actual - conteo real)
+        this.userModel.countDocuments(),
+
+        // Usuarios con email (SIN excluir al actual)
+        this.userModel.countDocuments({
+          email: { $exists: true, $ne: null },
+        }),
+
+        // Usuarios por rol (SIN excluir al actual - conteo real)
+        this.userModel.aggregate([
+          { $group: { _id: '$role', count: { $sum: 1 } } },
+        ]),
+
+        // Usuarios de plataforma nuevos este mes (sin admins, sin el actual)
+        this.userModel.countDocuments({
+          ...platformUsersFilter,
+          createdAt: { $gte: startOfMonth },
+        }),
+
+        // Usuarios de plataforma mes anterior (sin admins, sin el actual)
+        this.userModel.countDocuments({
+          ...platformUsersFilter,
+          createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+        }),
+
+        // Total tiendas
+        this.userModel.countDocuments({ role: 'tienda' }),
+
+        // Tiendas activas
+        this.userModel.countDocuments({
+          role: 'tienda',
+          isAllowed: true,
+          $or: [
+            { expiryDate: { $gt: now } },
+            { expiryDate: { $exists: false } },
+          ],
+        }),
+
+        // Tiendas pendientes de aprobación
+        this.userModel.countDocuments({
+          role: 'tienda',
+          isAllowed: false,
+        }),
+
+        // Tiendas expiradas
+        this.userModel.countDocuments({
+          role: 'tienda',
+          expiryDate: { $lt: now },
+        }),
+
+        // Tiendas que expiran en 7 días
+        this.userModel.countDocuments({
+          role: 'tienda',
+          isAllowed: true,
+          expiryDate: { $gte: now, $lte: sevenDaysFromNow },
+        }),
+
+        // Tiendas nuevas este mes
+        this.userModel.countDocuments({
+          role: 'tienda',
+          createdAt: { $gte: startOfMonth },
+        }),
+
+        // Tiendas mes anterior
+        this.userModel.countDocuments({
+          role: 'tienda',
+          createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+        }),
+
+        // Tiendas sin productos
+        this.getStoresWithoutProducts(),
+
+        // Total productos
+        this.productModel.countDocuments(),
+
+        // Productos disponibles
+        this.productModel.countDocuments({ amount: { $gt: 0 } }),
+
+        // Productos agotados
+        this.productModel.countDocuments({ amount: 0 }),
+
+        // Usuarios recientes (EXCLUYE al admin actual)
+        this.getRecentUsersWithProductCount(10, currentUserObjectId),
+
+        // Top tiendas por cantidad de productos
+        this.getTopStoresByProducts(5),
+      ]);
+
+      // Procesar distribución por rol
+      const roleDistribution = {
+        administrador: 0,
+        tienda: 0,
+        vendedor: 0,
+      };
+      usersByRole.forEach((item: { _id: string; count: number }) => {
+        if (item._id in roleDistribution) {
+          roleDistribution[item._id as keyof typeof roleDistribution] =
+            item.count;
+        }
+      });
+
+      // Calcular crecimiento de usuarios de plataforma
+      const usersPercentage = this.calculateGrowthPercentage(
+        platformUsersThisMonth,
+        platformUsersLastMonth,
+      );
+
+      // Calcular crecimiento de tiendas
+      const storesPercentage = this.calculateGrowthPercentage(
+        storesThisMonth,
+        storesLastMonth,
+      );
+
+      // Calcular promedio de productos por tienda activa
+      const averagePerStore =
+        activeStores > 0
+          ? Math.round((totalProducts / activeStores) * 10) / 10
+          : 0;
+
+      return {
+        users: {
+          total: totalUsers,
+          newThisMonth: platformUsersThisMonth,
+          withEmail: usersWithEmail,
+          byRole: roleDistribution,
+        },
+        stores: {
+          total: totalStores,
+          active: activeStores,
+          pending: pendingStores,
+          expired: expiredStores,
+          expiringSoon: expiringSoonStores,
+        },
+        products: {
+          total: totalProducts,
+          available: availableProducts,
+          outOfStock: outOfStockProducts,
+          averagePerStore,
+        },
+        growth: {
+          usersThisMonth: platformUsersThisMonth,
+          usersLastMonth: platformUsersLastMonth,
+          usersPercentage,
+          storesThisMonth,
+          storesLastMonth,
+          storesPercentage,
+        },
+        recentUsers: recentUsersWithProducts,
+        topStores: topStoresByProducts,
+        alerts: {
+          pendingApprovals: pendingStores,
+          expiringSoon: expiringSoonStores,
+          expiredStores,
+          storesWithoutProducts,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error al obtener estadísticas de plataforma:', error);
+      throw new InternalServerErrorException(
+        'Error al obtener estadísticas de la plataforma',
+      );
+    }
+  }
 
   /**
    * Obtener todos los usuarios con paginación

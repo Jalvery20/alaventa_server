@@ -14,6 +14,7 @@ import {
   Patch,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import {
@@ -47,6 +48,18 @@ export class UsersController {
   @UseGuards(AdminGuard)
   async getAllUsers() {
     return this.usersService.getAllUsers();
+  }
+
+  /**
+   * GET /users/stats/platform
+   * Obtener todas las estadísticas de la plataforma
+   */
+  @Get('stats/platform')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async getPlatformStats(@Req() req) {
+    const currentUserId = req.user.userId;
+    return this.usersService.getPlatformStats(currentUserId);
   }
 
   @Get(':id')
