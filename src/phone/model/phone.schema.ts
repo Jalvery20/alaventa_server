@@ -11,7 +11,7 @@ export class Phone extends Document {
 
   @Prop({
     required: true,
-    enum: ['vendedor', 'tienda'],
+    enum: ['vendedor', 'tienda', 'administrador'],
     default: 'vendedor',
   })
   role: string;

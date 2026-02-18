@@ -23,10 +23,6 @@ export class UserGuard {
     try {
       const decoded = this.jwtService.verify(token);
       request.user = decoded;
-      // Verificar que el usuario es un administrador
-      if (decoded.role !== 'vendedor' && decoded.role !== 'tienda') {
-        throw new UnauthorizedException('No tienes permisos de usuario');
-      }
       return true;
     } catch (error) {
       if (error.name === 'TokenExpiredError') {

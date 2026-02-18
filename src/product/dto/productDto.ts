@@ -10,6 +10,9 @@ import {
   IsArray,
   ArrayMinSize,
   IsNumber,
+  IsNotEmpty,
+  Max,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
@@ -230,24 +233,6 @@ export class StoreCategoryProductDto {
   orderBy?: string;
 }
 
-export class ProductSearchDto {
-  @IsOptional()
-  @Transform(({ value }) => parseInt(value))
-  @IsInt({ message: 'La página debe ser un número entero' })
-  page?: number;
-
-  @IsOptional()
-  @Transform(({ value }) => parseInt(value))
-  @IsInt({ message: 'El límite debe ser un número entero' })
-  limit?: number;
-
-  @IsOptional()
-  province?: string;
-
-  @IsOptional()
-  municipality?: string;
-}
-
 export interface ProductFilter {
   seller?: string;
   category?: string;
@@ -271,4 +256,75 @@ export class ExportProductsDto {
   @IsOptional()
   @IsString()
   dateTo?: string; // ISO date string
+}
+
+export class CartRecommendationsDto {
+  @IsArray()
+  @ArrayMinSize(1, {
+    message: 'Debe enviar al menos un producto en el carrito',
+  })
+  @ValidateNested({ each: true })
+  @Type(() => CartItemDto)
+  cartItems: CartItemDto[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  @Type(() => Number)
+  limit?: number = 8;
+}
+
+class CartItemDto {
+  @IsString()
+  @IsNotEmpty()
+  category: string;
+
+  @IsString()
+  @IsNotEmpty()
+  sellerId: string; // seller ID
+
+  @IsString()
+  @IsNotEmpty()
+  productId: string; // Para excluirlo de las recomendaciones
+}
+
+export class ProductSearchDto {
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value))
+  @IsInt({ message: 'La página debe ser un número entero' })
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value))
+  @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  municipality?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['relevance', 'price_asc', 'price_desc', 'newest', 'rating'])
+  sortBy?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value ? parseFloat(value) : undefined))
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => (value ? parseFloat(value) : undefined))
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
 }

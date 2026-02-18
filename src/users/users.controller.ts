@@ -20,8 +20,11 @@ import { UsersService } from './users.service';
 import {
   CompleteUserDto,
   CreateUserDto,
+  ExportUsersQueryDto,
   getStoresDto,
+  GetUsersQueryDto,
   PatchStoreDto,
+  PatchUserDto,
   UpdateAvailableUserDto,
   UpdatePasswordDto,
   UpdateStoreCategoriesDto,
@@ -48,6 +51,79 @@ export class UsersController {
   @UseGuards(AdminGuard)
   async getAllUsers() {
     return this.usersService.getAllUsers();
+  }
+
+  /**
+   * GET /users/admin/list
+   * Obtener usuarios con filtros para UsersManager (solo admin)
+   */
+  @Get('admin/list')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async getUsersForManagement(@Req() req, @Query() query: GetUsersQueryDto) {
+    const currentUserId = req.user.userId;
+    return this.usersService.getUsersForManagement(query, currentUserId);
+  }
+
+  /**
+   * GET /users/admin/export
+   * Exportar usuarios con filtros (solo admin)
+   */
+  @Get('admin/export')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async exportUsers(@Query() query: ExportUsersQueryDto) {
+    return this.usersService.exportUsers(query);
+  }
+
+  /**
+   * PUT /users/admin/bulk/toggle-status
+   * Habilitar/Deshabilitar múltiples usuarios (solo admin)
+   */
+  @Put('admin/bulk/toggle-status')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async bulkToggleUserStatus(
+    @Body(ValidationPipe)
+    bulkToggleDto: {
+      userIds: string[];
+      isAllowed: boolean;
+    },
+  ) {
+    return this.usersService.bulkToggleUserStatus(
+      bulkToggleDto.userIds,
+      bulkToggleDto.isAllowed,
+    );
+  }
+
+  /**
+   * DELETE /users/admin/bulk
+   * Eliminar múltiples usuarios (solo admin)
+   */
+  @Delete('admin/bulk')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async bulkDeleteUsers(
+    @Body(ValidationPipe)
+    bulkDeleteDto: {
+      userIds: string[];
+    },
+  ) {
+    return this.usersService.bulkDeleteUsers(bulkDeleteDto.userIds);
+  }
+
+  /**
+   * PUT /users/admin/:id/extend-expiry
+   * Extender fecha de expiración por 30 días (solo admin)
+   */
+  @Put('admin/:id/extend-expiry')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async extendUserExpiry(
+    @Param('id') id: string,
+    @Body(ValidationPipe) extendDto?: { days?: number },
+  ) {
+    return this.usersService.extendUserExpiry(id, extendDto?.days);
   }
 
   /**
@@ -218,6 +294,27 @@ export class UsersController {
       id,
       updateStoreCategoriesDto,
     );
+  }
+
+  /**
+   * PATCH /users/:id
+   * Actualización parcial de usuario sin storeDetails (vendedor/admin)
+   */
+  @Patch(':id')
+  @UseGuards(EditUserGuard) // O el guard que corresponda
+  @HttpCode(HttpStatus.OK)
+  async patchUser(
+    @Param('id') id: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    patchUserDto: PatchUserDto,
+  ) {
+    return this.usersService.patchUser(id, patchUserDto);
   }
 
   // ============================================

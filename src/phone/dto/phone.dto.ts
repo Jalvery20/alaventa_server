@@ -6,6 +6,6 @@ export class PhoneDto {
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['vendedor', 'tienda'])
+  @IsIn(['vendedor', 'tienda', 'administrador'])
   role: string;
 }

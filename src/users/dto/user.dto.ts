@@ -23,6 +23,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
   ValidationArguments,
+  Max,
 } from 'class-validator';
 
 // ============================================
@@ -501,4 +502,97 @@ export class PatchStoreDto {
   @ValidateNested()
   @Type(() => PatchStoreDetailsDto)
   storeDetails?: PatchStoreDetailsDto;
+}
+
+/**
+ * DTO para actualización parcial de usuarios no-tienda
+ * (vendedores y administradores)
+ */
+export class PatchUserDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(5, { message: 'El nombre debe tener al menos 5 caracteres' })
+  @MaxLength(100, { message: 'El nombre no puede exceder 100 caracteres' })
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  municipality?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'Debe ser un email válido' })
+  email?: string;
+}
+
+/**
+ * DTO para obtener usuarios con filtros
+ */
+export class GetUsersQueryDto {
+  // Búsqueda
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  // Filtro por rol
+  @IsOptional()
+  @IsIn(['all', 'administrador', 'vendedor', 'tienda'])
+  role?: string;
+
+  // Filtro por estado
+  @IsOptional()
+  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'])
+  status?: string;
+
+  // Filtro por provincia
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  // Ordenamiento
+  @IsOptional()
+  @IsIn(['newest', 'name', 'expiry', 'products'])
+  sortBy?: string;
+
+  // Paginación
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+/**
+ * DTO para exportar usuarios
+ */
+export class ExportUsersQueryDto {
+  @IsOptional()
+  @IsIn(['all', 'administrador', 'vendedor', 'tienda'])
+  role?: string;
+
+  @IsOptional()
+  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'])
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  province?: string;
 }

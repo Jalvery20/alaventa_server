@@ -10,7 +10,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { User } from './model/user.schema';
 import {
+  ExportUsersQueryDto,
+  GetUsersQueryDto,
   PatchStoreDto,
+  PatchUserDto,
   UpdatePasswordDto,
   UpdateStoreCategoriesDto,
   UpdateStoreDto,
@@ -66,7 +69,50 @@ export interface PlatformStats {
     isAllowed: boolean;
     expiryDate?: Date;
     productsCount: number;
+    storeImg: string | null;
   }>;
+}
+
+interface UserWithProductCount {
+  _id: string;
+  name: string;
+  role: string;
+  phoneNumber: string;
+  email?: string;
+  province: string;
+  municipality: string;
+  address?: string;
+  createdAt: Date;
+  isAllowed: boolean;
+  expiryDate?: Date;
+  productsCount: number;
+  storeDetails?: {
+    storePic?: string;
+    description?: string;
+  };
+}
+
+export interface GetUsersResponse {
+  success: boolean;
+  data: UserWithProductCount[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats: {
+    total: number;
+    active: number;
+    expired: number;
+    expiringSoon: number;
+    disabled: number;
+    byRole: {
+      administrador: number;
+      tienda: number;
+      vendedor: number;
+    };
+  };
 }
 
 @Injectable()
@@ -95,7 +141,7 @@ export class UsersService {
 
   /**
    * Obtener usuarios recientes con conteo de productos
-   * Excluye al administrador actual del listado
+   * Usando queries separadas que sabemos que funcionan
    */
   private async getRecentUsersWithProductCount(
     limit: number,
@@ -112,38 +158,62 @@ export class UsersService {
       isAllowed: boolean;
       expiryDate?: Date;
       productsCount: number;
+      storeImg: string | null;
     }>
   > {
-    const users = await this.userModel.aggregate([
-      // Excluir solo al usuario actual (muestra otros admins si existen)
-      { $match: { _id: { $ne: excludeUserId } } },
-      { $sort: { createdAt: -1 } },
-      { $limit: limit },
+    // Paso 1: Obtener usuarios recientes
+    const users = await this.userModel
+      .find({ _id: { $ne: excludeUserId } })
+      .select(
+        'name phoneNumber role province municipality createdAt isAllowed expiryDate storeDetails.storePic',
+      )
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec();
+
+    if (users.length === 0) {
+      return [];
+    }
+
+    // Paso 2: Obtener conteo de productos agrupado por seller
+    const userIds = users.map((u) => u._id);
+
+    const userIdsAsStrings = userIds.map((id) => id.toString());
+    const productCounts = await this.productModel.aggregate([
       {
-        $lookup: {
-          from: 'products',
-          localField: '_id',
-          foreignField: 'seller',
-          as: 'products',
+        $match: {
+          seller: { $in: userIdsAsStrings },
         },
       },
       {
-        $project: {
-          _id: 1,
-          name: { $ifNull: ['$name', 'Sin nombre'] },
-          phoneNumber: 1,
-          role: 1,
-          province: { $ifNull: ['$province', ''] },
-          municipality: { $ifNull: ['$municipality', ''] },
-          createdAt: 1,
-          isAllowed: { $ifNull: ['$isAllowed', true] },
-          expiryDate: 1,
-          productsCount: { $size: '$products' },
+        $group: {
+          _id: '$seller',
+          count: { $sum: 1 },
         },
       },
     ]);
 
-    return users;
+    // Crear mapa de conteos (usando string como key)
+    const countMap = new Map<string, number>();
+    productCounts.forEach((item) => {
+      countMap.set(item._id.toString(), item.count);
+    });
+
+    // Paso 3: Combinar resultados
+    return users.map((user) => ({
+      _id: user._id.toString(),
+      name: user.name || 'Sin nombre',
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      province: user.province || '',
+      municipality: user.municipality || '',
+      createdAt: user.createdAt,
+      isAllowed: user.isAllowed ?? true,
+      expiryDate: user.expiryDate,
+      productsCount: countMap.get(user._id.toString()) || 0,
+      storeImg: user.storeDetails?.storePic || null,
+    }));
   }
 
   /**
@@ -265,6 +335,69 @@ export class UsersService {
         `No se pudo eliminar imagen anterior de tienda: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Calcular estadísticas de usuarios
+   */
+  private async calculateUserStats() {
+    const now = new Date();
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const [total, active, expired, expiringSoon, disabled, roleDistribution] =
+      await Promise.all([
+        // Total de usuarios
+        this.userModel.countDocuments(),
+
+        // Usuarios activos
+        this.userModel.countDocuments({
+          isAllowed: true,
+          $or: [
+            { expiryDate: { $gt: now } },
+            { expiryDate: { $exists: false } },
+          ],
+        }),
+
+        // Usuarios expirados
+        this.userModel.countDocuments({
+          expiryDate: { $exists: true, $lt: now },
+        }),
+
+        // Usuarios próximos a expirar
+        this.userModel.countDocuments({
+          isAllowed: true,
+          expiryDate: { $gte: now, $lte: sevenDaysFromNow },
+        }),
+
+        // Usuarios deshabilitados
+        this.userModel.countDocuments({ isAllowed: false }),
+
+        // Distribución por rol
+        this.userModel.aggregate([
+          { $group: { _id: '$role', count: { $sum: 1 } } },
+        ]),
+      ]);
+
+    const byRole = {
+      administrador: 0,
+      tienda: 0,
+      vendedor: 0,
+    };
+
+    roleDistribution.forEach((item: { _id: string; count: number }) => {
+      if (item._id in byRole) {
+        byRole[item._id as keyof typeof byRole] = item.count;
+      }
+    });
+
+    return {
+      total,
+      active,
+      expired,
+      expiringSoon,
+      disabled,
+      byRole,
+    };
   }
 
   // ============================================
@@ -445,6 +578,487 @@ export class UsersService {
       throw new InternalServerErrorException(
         'Error al obtener estadísticas de la plataforma',
       );
+    }
+  }
+
+  /**
+   * Obtener usuarios con filtros para UsersManager
+   */
+  async getUsersForManagement(
+    query: GetUsersQueryDto,
+    currentUserId: string,
+  ): Promise<GetUsersResponse> {
+    try {
+      // Validar ID del usuario actual
+      this.validateObjectId(currentUserId, 'ID de usuario');
+
+      const {
+        search = '',
+        role = 'all',
+        status = 'all',
+        province = 'all',
+        sortBy = 'newest',
+        page = 1,
+        limit = 20,
+      } = query;
+
+      const now = new Date();
+      const sevenDaysFromNow = new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000,
+      );
+
+      // ============================================
+      // CONSTRUIR FILTRO BASE
+      // ============================================
+
+      const baseFilter: any = {
+        // ✅ Excluir al usuario actual
+        _id: { $ne: new Types.ObjectId(currentUserId) },
+      };
+
+      // Filtro por búsqueda
+      if (search) {
+        baseFilter.$or = [
+          { name: { $regex: search, $options: 'i' } },
+          { phoneNumber: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { municipality: { $regex: search, $options: 'i' } },
+        ];
+      }
+
+      // Filtro por rol
+      if (role !== 'all') {
+        baseFilter.role = role;
+      }
+
+      // Filtro por provincia
+      if (province !== 'all') {
+        baseFilter.province = province;
+      }
+
+      // Filtro por estado
+      switch (status) {
+        case 'active':
+          // Usar $and para combinar con el filtro de exclusión existente
+          baseFilter.$and = baseFilter.$and || [];
+          baseFilter.$and.push(
+            { isAllowed: true },
+            {
+              $or: [
+                { expiryDate: { $gt: now } },
+                { expiryDate: { $exists: false } },
+              ],
+            },
+          );
+          break;
+        case 'expired':
+          baseFilter.expiryDate = { $exists: true, $lt: now };
+          break;
+        case 'expiring-soon':
+          baseFilter.isAllowed = true;
+          baseFilter.expiryDate = { $gte: now, $lte: sevenDaysFromNow };
+          break;
+        case 'disabled':
+          baseFilter.isAllowed = false;
+          break;
+      }
+
+      // ============================================
+      // ORDENAMIENTO
+      // ============================================
+
+      let sortOptions: any = { createdAt: -1 };
+
+      switch (sortBy) {
+        case 'name':
+          sortOptions = { name: 1 };
+          break;
+        case 'expiry':
+          sortOptions = { expiryDate: 1 };
+          break;
+        case 'products':
+          sortOptions = { createdAt: -1 };
+          break;
+      }
+
+      // ============================================
+      // EJECUTAR QUERIES EN PARALELO
+      // ============================================
+
+      const [users, totalUsers, statsData] = await Promise.all([
+        // Obtener usuarios paginados
+        this.userModel
+          .find(baseFilter)
+          .select('-password -__v')
+          .sort(sortOptions)
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean()
+          .exec(),
+
+        // Contar total de usuarios que cumplen el filtro
+        this.userModel.countDocuments(baseFilter),
+
+        // Obtener estadísticas
+        this.calculateUserStats(),
+      ]);
+
+      // ============================================
+      // OBTENER CONTEO DE PRODUCTOS
+      // ============================================
+
+      const userIds = users.map((u) => u._id.toString());
+
+      const productCounts = await this.productModel.aggregate([
+        { $match: { seller: { $in: userIds } } },
+        { $group: { _id: '$seller', count: { $sum: 1 } } },
+      ]);
+
+      const countMap = new Map<string, number>();
+      productCounts.forEach((item) => {
+        countMap.set(item._id.toString(), item.count);
+      });
+
+      // ============================================
+      // COMBINAR DATOS
+      // ============================================
+
+      const usersWithProducts: UserWithProductCount[] = users.map((user) => ({
+        _id: user._id.toString(),
+        name: user.name || 'Sin nombre',
+        role: user.role,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        province: user.province || '',
+        municipality: user.municipality || '',
+        address: user.address,
+        createdAt: user.createdAt,
+        isAllowed: user.isAllowed ?? true,
+        expiryDate: user.expiryDate,
+        productsCount: countMap.get(user._id.toString()) || 0,
+        storeDetails: user.storeDetails
+          ? {
+              storePic: user.storeDetails.storePic,
+              description: user.storeDetails.description,
+            }
+          : undefined,
+      }));
+
+      // Ordenar por productos si se seleccionó
+      if (sortBy === 'products') {
+        usersWithProducts.sort((a, b) => b.productsCount - a.productsCount);
+      }
+
+      // ============================================
+      // CALCULAR PAGINACIÓN
+      // ============================================
+
+      const totalPages = Math.ceil(totalUsers / limit);
+
+      return {
+        success: true,
+        data: usersWithProducts,
+        pagination: {
+          page,
+          limit,
+          total: totalUsers,
+          totalPages,
+        },
+        stats: statsData,
+      };
+    } catch (error) {
+      this.logger.error('Error al obtener usuarios para gestión:', error);
+      throw new InternalServerErrorException(
+        'Error al obtener usuarios para gestión',
+      );
+    }
+  }
+
+  /**
+   * Habilitar/Deshabilitar múltiples usuarios
+   */
+  async bulkToggleUserStatus(
+    userIds: string[],
+    isAllowed: boolean,
+  ): Promise<{ success: boolean; modifiedCount: number; message: string }> {
+    try {
+      // Validar IDs
+      userIds.forEach((id) => this.validateObjectId(id, 'ID de usuario'));
+
+      // No permitir modificar administradores
+      const adminCount = await this.userModel.countDocuments({
+        _id: { $in: userIds },
+        role: 'administrador',
+      });
+
+      if (adminCount > 0) {
+        throw new BadRequestException(
+          'No se puede modificar el estado de administradores',
+        );
+      }
+
+      // Actualizar usuarios
+      const result = await this.userModel.updateMany(
+        { _id: { $in: userIds } },
+        { $set: { isAllowed } },
+      );
+
+      return {
+        success: true,
+        modifiedCount: result.modifiedCount,
+        message: `${result.modifiedCount} usuario(s) ${isAllowed ? 'habilitado(s)' : 'deshabilitado(s)'} correctamente`,
+      };
+    } catch (error) {
+      this.logger.error('Error en actualización masiva de usuarios:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Error al actualizar usuarios masivamente',
+      );
+    }
+  }
+
+  /**
+   * Eliminar múltiples usuarios
+   */
+  async bulkDeleteUsers(userIds: string[]): Promise<{
+    success: boolean;
+    deletedCount: number;
+    deletedProductsCount: number;
+    message: string;
+  }> {
+    try {
+      // Validar IDs
+      userIds.forEach((id) => this.validateObjectId(id, 'ID de usuario'));
+
+      // No permitir eliminar administradores
+      const adminCount = await this.userModel.countDocuments({
+        _id: { $in: userIds },
+        role: 'administrador',
+      });
+
+      if (adminCount > 0) {
+        throw new BadRequestException('No se pueden eliminar administradores');
+      }
+
+      // Obtener productos para eliminar imágenes después
+      const products = await this.productModel
+        .find({ seller: { $in: userIds } })
+        .select('imgUrl')
+        .lean()
+        .exec();
+
+      // Obtener imágenes de tiendas
+      const users = await this.userModel
+        .find({ _id: { $in: userIds } })
+        .select('storeDetails.storePic')
+        .lean()
+        .exec();
+
+      const storeImages = users
+        .filter((u) => u.storeDetails?.storePic)
+        .map((u) => u.storeDetails.storePic);
+
+      // Eliminar de DB primero
+      const [deletedProducts, deletedUsers] = await Promise.all([
+        this.productModel.deleteMany({ seller: { $in: userIds } }),
+        this.userModel.deleteMany({ _id: { $in: userIds } }),
+      ]);
+
+      // Eliminar imágenes en background
+      setImmediate(async () => {
+        try {
+          // Eliminar imágenes de productos
+          if (products.length > 0) {
+            await this.deleteProductImages(products as Product[]);
+          }
+
+          // Eliminar imágenes de tiendas
+          for (const imageUrl of storeImages) {
+            await this.deleteStoreImageInBackground(imageUrl);
+          }
+
+          this.logger.log(
+            `Eliminadas imágenes de ${products.length} productos y ${storeImages.length} tiendas`,
+          );
+        } catch (error) {
+          this.logger.error('Error al eliminar imágenes:', error);
+        }
+      });
+
+      return {
+        success: true,
+        deletedCount: deletedUsers.deletedCount,
+        deletedProductsCount: deletedProducts.deletedCount,
+        message: `${deletedUsers.deletedCount} usuario(s) y ${deletedProducts.deletedCount} producto(s) eliminados correctamente`,
+      };
+    } catch (error) {
+      this.logger.error('Error en eliminación masiva de usuarios:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Error al eliminar usuarios masivamente',
+      );
+    }
+  }
+
+  /**
+   * Extender fecha de expiración de usuario
+   */
+  async extendUserExpiry(
+    id: string,
+    days: number = 30,
+  ): Promise<{ success: boolean; newExpiryDate: Date; message: string }> {
+    try {
+      this.validateObjectId(id, 'ID de usuario');
+
+      const user = await this.userModel.findById(id).exec();
+
+      if (!user) {
+        throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
+      }
+
+      if (user.role === 'administrador') {
+        throw new BadRequestException(
+          'Los administradores no tienen fecha de expiración',
+        );
+      }
+
+      // Calcular nueva fecha
+      const now = new Date();
+      const currentExpiry = user.expiryDate || now;
+      const newExpiryDate = new Date(
+        Math.max(currentExpiry.getTime(), now.getTime()) +
+          days * 24 * 60 * 60 * 1000,
+      );
+
+      // Actualizar usuario
+      const updatedUser = await this.userModel
+        .findByIdAndUpdate(
+          id,
+          {
+            expiryDate: newExpiryDate,
+            isAllowed: true, // Habilitar al extender
+          },
+          { new: true },
+        )
+        .exec();
+
+      return {
+        success: true,
+        newExpiryDate: updatedUser.expiryDate,
+        message: `Suscripción extendida por ${days} días`,
+      };
+    } catch (error) {
+      this.logger.error('Error al extender expiración:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Error al extender fecha de expiración',
+      );
+    }
+  }
+
+  /**
+   * Exportar usuarios con filtros
+   */
+  async exportUsers(query: ExportUsersQueryDto) {
+    try {
+      const { role = 'all', status = 'all', province = 'all' } = query;
+
+      const now = new Date();
+      const sevenDaysFromNow = new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000,
+      );
+
+      // Construir filtro
+      const filter: any = {};
+
+      if (role !== 'all') {
+        filter.role = role;
+      }
+
+      if (province !== 'all') {
+        filter.province = province;
+      }
+
+      switch (status) {
+        case 'active':
+          filter.isAllowed = true;
+          filter.$or = [
+            { expiryDate: { $gt: now } },
+            { expiryDate: { $exists: false } },
+          ];
+          break;
+        case 'expired':
+          filter.expiryDate = { $exists: true, $lt: now };
+          break;
+        case 'expiring-soon':
+          filter.isAllowed = true;
+          filter.expiryDate = { $gte: now, $lte: sevenDaysFromNow };
+          break;
+        case 'disabled':
+          filter.isAllowed = false;
+          break;
+      }
+
+      // Obtener usuarios - SOLO EXCLUSIÓN
+      const users = await this.userModel
+        .find(filter)
+        .select('-password -__v') // ✅ Solo exclusión
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
+
+      // Obtener conteo de productos
+      const userIds = users.map((u) => u._id.toString());
+
+      const productCounts = await this.productModel.aggregate([
+        { $match: { seller: { $in: userIds } } },
+        { $group: { _id: '$seller', count: { $sum: 1 } } },
+      ]);
+
+      const countMap = new Map<string, number>();
+      productCounts.forEach((item) => {
+        countMap.set(item._id.toString(), item.count);
+      });
+
+      // Combinar datos
+      const data = users.map((user) => ({
+        _id: user._id.toString(),
+        name: user.name || 'Sin nombre',
+        role: user.role,
+        phoneNumber: user.phoneNumber,
+        email: user.email || '',
+        province: user.province || '',
+        municipality: user.municipality || '',
+        address: user.address || '',
+        createdAt: user.createdAt,
+        isAllowed: user.isAllowed ?? true,
+        expiryDate: user.expiryDate,
+        productsCount: countMap.get(user._id.toString()) || 0,
+      }));
+
+      return {
+        success: true,
+        count: data.length,
+        data,
+      };
+    } catch (error) {
+      this.logger.error('Error al exportar usuarios:', error);
+      throw new InternalServerErrorException('Error al exportar usuarios');
     }
   }
 
@@ -965,6 +1579,95 @@ export class UsersService {
       }
       throw new InternalServerErrorException(
         `Error al actualizar tienda: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * PATCH User - Actualización parcial para usuarios sin storeDetails
+   * (vendedores y administradores)
+   */
+  async patchUser(
+    id: string,
+    patchUserDto: PatchUserDto,
+  ): Promise<{
+    success: boolean;
+    data: User;
+    message: string;
+  }> {
+    // Validar ID
+    this.validateObjectId(id, 'ID de usuario');
+
+    // Validar que el usuario existe
+    const user = await this.userModel.findById(id).exec();
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
+    }
+
+    // Validar que NO sea una tienda (este servicio es para vendedores/admins)
+    if (user.role === 'tienda') {
+      throw new BadRequestException(
+        'Use el endpoint /users/store/:id para actualizar tiendas',
+      );
+    }
+
+    // Validar email único si se actualiza
+    if (patchUserDto.email) {
+      await this.checkEmailUnique(patchUserDto.email, id);
+    }
+
+    // Construir objeto de actualización
+    const updateObject: Record<string, any> = {};
+
+    if (patchUserDto.name !== undefined) {
+      updateObject.name = patchUserDto.name;
+    }
+    if (patchUserDto.province !== undefined) {
+      updateObject.province = patchUserDto.province;
+    }
+    if (patchUserDto.municipality !== undefined) {
+      updateObject.municipality = patchUserDto.municipality;
+    }
+    if (patchUserDto.address !== undefined) {
+      updateObject.address = patchUserDto.address;
+    }
+    if (patchUserDto.email !== undefined) {
+      updateObject.email = patchUserDto.email.toLowerCase().trim();
+    }
+
+    // Verificar que hay algo que actualizar
+    if (Object.keys(updateObject).length === 0) {
+      throw new BadRequestException(
+        'No se proporcionaron campos para actualizar',
+      );
+    }
+
+    try {
+      // Actualizar en DB
+      const updatedUser = await this.userModel
+        .findByIdAndUpdate(
+          id,
+          { $set: updateObject },
+          { new: true, runValidators: true },
+        )
+        .select('-password')
+        .exec();
+
+      if (!updatedUser) {
+        throw new InternalServerErrorException('Error al actualizar usuario');
+      }
+
+      return {
+        success: true,
+        data: updatedUser,
+        message: 'Usuario actualizado correctamente',
+      };
+    } catch (error) {
+      if (error.code === 11000 && error.keyPattern?.email) {
+        throw new ConflictException('El email ya está registrado');
+      }
+      throw new InternalServerErrorException(
+        `Error al actualizar usuario: ${error.message}`,
       );
     }
   }

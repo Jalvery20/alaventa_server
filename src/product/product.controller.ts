@@ -26,6 +26,7 @@ import { Product } from './model/product.schema';
 import {
   BulkDeleteDto,
   BulkVisibilityDto,
+  CartRecommendationsDto,
   CategoryProductDto,
   CreateProductDto,
   ExportProductsDto,
@@ -116,21 +117,14 @@ export class ProductController {
   @Get('/search/:name')
   async obtenerPorNombre(
     @Param('name') name: string,
-    @Query() query: ProductSearchDto,
-  ): Promise<any> {
-    const {
-      province = 'Villa Clara',
-      municipality = 'todos',
-      page = 1,
-      limit = 10,
-    } = query;
-    return this.productService.findProductByName(
-      name,
-      page,
-      limit,
-      province,
-      municipality,
-    );
+    @Query(new ValidationPipe({ transform: true })) query: ProductSearchDto,
+  ): Promise<{
+    products: Product[];
+    total: number;
+    totalPages: number;
+    currentPage: number;
+  }> {
+    return this.productService.findProductByName(name, query);
   }
 
   @Get('/collection/recent')
@@ -224,6 +218,29 @@ export class ProductController {
     }
 
     return this.productService.crearProducto(productoDto, images);
+  }
+
+  /**
+   * POST /product/recommendations/cart
+   * Obtener productos recomendados basados en el carrito
+   */
+  @Post('/recommendations/cart')
+  @HttpCode(HttpStatus.OK)
+  async getCartRecommendations(
+    @Body(new ValidationPipe({ transform: true }))
+    dto: CartRecommendationsDto,
+  ): Promise<{
+    success: boolean;
+    count: number;
+    products: Product[];
+  }> {
+    const products = await this.productService.getCartRecommendations(dto);
+
+    return {
+      success: true,
+      count: products.length,
+      products,
+    };
   }
 
   @Put(':id')

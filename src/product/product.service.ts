@@ -11,8 +11,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { Product } from './model/product.schema';
 import {
+  CartRecommendationsDto,
   CreateProductDto,
   ProductFilter,
+  ProductSearchDto,
   SellerProductsQueryDto,
   UpdateProductDto,
 } from './dto/productDto';
@@ -296,6 +298,137 @@ export class ProductService {
     };
   }
 
+  /**
+   * Corregir productos con isVisible: null -> true
+   * Mantiene los que tienen isVisible: false
+   */
+  /* async fixNullVisibility(): Promise<{
+    modifiedCount: number;
+    matchedCount: number;
+  }> {
+    const result = await this.productModel.updateMany(
+      {
+        $or: [{ isVisible: null }, { isVisible: { $exists: false } }],
+      },
+      { $set: { isVisible: true } },
+    );
+
+    this.logger.log(
+      `Fixed visibility: ${result.modifiedCount} products updated out of ${result.matchedCount} matched`,
+    );
+
+    return {
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount,
+    };
+  }*/
+
+  /**
+   * Obtener productos recomendados basados en el carrito
+   * Obtiene la ubicación de los sellers del carrito
+   * Estrategia de scoring:
+   * - +10 puntos: producto de misma tienda del carrito
+   * - +5 puntos: producto de misma categoría del carrito
+   */
+  async getCartRecommendations(
+    dto: CartRecommendationsDto,
+  ): Promise<Product[]> {
+    const { cartItems, limit = 8 } = dto;
+
+    const categories = [...new Set(cartItems.map((item) => item.category))];
+    const storeIds = [...new Set(cartItems.map((item) => item.sellerId))];
+    const productIdsToExclude = cartItems.map((item) => item.productId);
+
+    // Validar IDs
+    storeIds.forEach((id) => this.validateObjectId(id, 'ID de tienda'));
+    productIdsToExclude.forEach((id) =>
+      this.validateObjectId(id, 'ID de producto'),
+    );
+
+    const baseFilter = {
+      _id: { $nin: productIdsToExclude },
+      amount: { $gt: 0 },
+      isVisible: true,
+    };
+
+    const populateOptions = {
+      path: 'seller',
+      select: 'name phoneNumber role storeDetails province municipality',
+    };
+
+    try {
+      let recommendations: Product[] = [];
+      let remainingLimit = limit;
+
+      // PRIORIDAD 1: Productos de las mismas categorías (cualquier tienda)
+      if (remainingLimit > 0) {
+        const categoryProducts = await this.productModel
+          .find({
+            ...baseFilter,
+            category: { $in: categories },
+          })
+          .populate(populateOptions)
+          .sort({ createdAt: -1 })
+          .limit(remainingLimit)
+          .lean()
+          .exec();
+
+        recommendations = [...categoryProducts];
+        remainingLimit = limit - recommendations.length;
+
+        // Actualizar exclusiones para evitar duplicados
+        const foundIds = categoryProducts.map((p) => p._id.toString());
+        baseFilter._id = { $nin: [...productIdsToExclude, ...foundIds] };
+      }
+
+      // PRIORIDAD 2: Productos de las mismas tiendas (cualquier categoría)
+      if (remainingLimit > 0) {
+        const storeProducts = await this.productModel
+          .find({
+            ...baseFilter,
+            seller: { $in: storeIds },
+          })
+          .populate(populateOptions)
+          .sort({ createdAt: -1 })
+          .limit(remainingLimit)
+          .lean()
+          .exec();
+
+        recommendations = [...recommendations, ...storeProducts];
+        remainingLimit = limit - recommendations.length;
+
+        // Actualizar exclusiones
+        baseFilter._id = {
+          $nin: [
+            ...productIdsToExclude,
+            ...recommendations.map((p) => p._id.toString()),
+          ],
+        };
+      }
+
+      // PRIORIDAD 3 (FALLBACK): Productos recientes de cualquier tienda
+      if (remainingLimit > 0) {
+        const recentProducts = await this.productModel
+          .find(baseFilter)
+          .populate(populateOptions)
+          .sort({ createdAt: -1 })
+          .limit(remainingLimit)
+          .lean()
+          .exec();
+
+        recommendations = [...recommendations, ...recentProducts];
+      }
+
+      return recommendations as Product[];
+    } catch (error) {
+      this.logger.error('Error al obtener recomendaciones:', error);
+      throw new HttpException(
+        'Error al obtener productos recomendados',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   async toggleProductVisibility(
     productId: string,
     isVisible: boolean,
@@ -484,15 +617,17 @@ export class ProductService {
   }
 
   /**
-   * Buscar productos por nombre
+   * Buscar productos por nombre con filtros avanzados
    */
   async findProductByName(
     name: string,
-    page: number,
-    limit: number,
-    province: string,
-    municipality: string,
-  ): Promise<any> {
+    query: ProductSearchDto,
+  ): Promise<{
+    products: Product[];
+    total: number;
+    totalPages: number;
+    currentPage: number;
+  }> {
     const cleanedName = name.trim().toLowerCase();
 
     if (!cleanedName) {
@@ -501,45 +636,108 @@ export class ProductService {
       );
     }
 
-    // Obtener vendedores permitidos usando método reutilizable
+    const {
+      page = 1,
+      limit = 18,
+      province = 'Villa Clara',
+      municipality = 'todos',
+      sortBy = 'relevance',
+      minPrice,
+      maxPrice,
+    } = query;
+
+    // Obtener vendedores permitidos
     const sellerIdsAllowed = await this.getAllowedSellerIds(
       province,
       municipality,
     );
 
-    const query = {
-      name: { $regex: cleanedName, $options: 'i' },
-      seller: { $in: sellerIdsAllowed },
-    };
-
-    // Ejecutar queries en paralelo
-    const [products, totalProducts] = await Promise.all([
-      this.productModel
-        .find(query)
-        .populate({
-          path: 'seller',
-          select:
-            'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
-        })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.productModel.countDocuments(query),
-    ]);
-
-    if (!products || products.length === 0) {
-      throw new NotFoundException(
-        `Producto con nombre similar a '${name}' no encontrado`,
-      );
+    if (sellerIdsAllowed.length === 0) {
+      return {
+        products: [],
+        total: 0,
+        totalPages: 0,
+        currentPage: page,
+      };
     }
 
-    const totalPages = Math.ceil(totalProducts / limit);
-
-    return {
-      products,
-      totalPages,
+    // Construir filtro base
+    const filter: Record<string, any> = {
+      name: { $regex: cleanedName, $options: 'i' },
+      seller: { $in: sellerIdsAllowed },
+      isVisible: true,
+      amount: { $gt: 0 },
     };
+
+    // Filtro de rango de precios
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.price = {};
+      if (minPrice !== undefined) {
+        filter.price.$gte = minPrice;
+      }
+      if (maxPrice !== undefined) {
+        filter.price.$lte = maxPrice;
+      }
+    }
+
+    // Construir ordenamiento
+    const sortObject: Record<string, 1 | -1> = {};
+
+    switch (sortBy) {
+      case 'price_asc':
+        sortObject.price = 1;
+        sortObject.createdAt = -1;
+        break;
+      case 'price_desc':
+        sortObject.price = -1;
+        sortObject.createdAt = -1;
+        break;
+      case 'newest':
+        sortObject.createdAt = -1;
+        break;
+      case 'relevance':
+      default:
+        // Con $regex no se puede usar textScore
+        // Ordenar por fecha como fallback para relevancia
+        sortObject.createdAt = -1;
+        break;
+    }
+
+    try {
+      const [products, total] = await Promise.all([
+        this.productModel
+          .find(filter)
+          .populate({
+            path: 'seller',
+            select:
+              'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
+          })
+          .sort(sortObject)
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean()
+          .exec(),
+        this.productModel.countDocuments(filter),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        products: products as Product[],
+        total,
+        totalPages,
+        currentPage: page,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error en búsqueda de productos: ${error.message}`,
+        error.stack,
+      );
+      throw new HttpException(
+        'Error al buscar productos',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
@@ -559,8 +757,7 @@ export class ProductService {
       .find({ seller: { $in: sellerIdsAllowed } })
       .populate({
         path: 'seller',
-        select:
-          'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
+        select: 'name phoneNumber role storeDetails province municipality',
       })
       .sort({ createdAt: -1 })
       .limit(10)
@@ -1086,5 +1283,61 @@ export class ProductService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     }));
+  }
+
+  /**
+   * Obtener cantidad de productos huérfanos (cuyo vendedor no existe)
+   */
+  async getOrphanProductsCount(includeDetails: boolean = false): Promise<{
+    count: number;
+    details?: Array<{
+      productId: string;
+      productName: string;
+      sellerId: string;
+      category: string;
+      createdAt: Date;
+    }>;
+  }> {
+    try {
+      // Paso 1: Obtener todos los IDs de usuarios existentes (como strings)
+      const existingUsers = await this.userModel
+        .find()
+        .select('_id')
+        .lean()
+        .exec();
+
+      const existingUserIds = existingUsers.map((user) => user._id.toString());
+
+      // Paso 2: Buscar productos cuyo seller NO esté en la lista de usuarios
+      const filter = { seller: { $nin: existingUserIds } };
+
+      if (includeDetails) {
+        const orphanProducts = await this.productModel
+          .find(filter)
+          .select('name seller category createdAt')
+          .lean()
+          .exec();
+
+        return {
+          count: orphanProducts.length,
+          details: orphanProducts.map((p) => ({
+            productId: p._id.toString(),
+            productName: p.name,
+            sellerId: p.seller.toString(),
+            category: p.category,
+            createdAt: p.createdAt,
+          })),
+        };
+      } else {
+        const count = await this.productModel.countDocuments(filter);
+        return { count };
+      }
+    } catch (error) {
+      this.logger.error('Error al obtener productos huérfanos:', error);
+      throw new HttpException(
+        'Error al obtener productos huérfanos',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
