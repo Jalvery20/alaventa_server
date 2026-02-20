@@ -13,7 +13,7 @@ import { Product } from './model/product.schema';
 import {
   CartRecommendationsDto,
   CreateProductDto,
-  ProductFilter,
+  GetStoreProductsQueryDto,
   ProductSearchDto,
   SellerProductsQueryDto,
   UpdateProductDto,
@@ -66,6 +66,14 @@ export interface SellerProductsResponse {
   };
 }
 
+export interface StoreProductsResponse {
+  success: boolean;
+  products: Product[];
+  totalPages: number;
+  totalProducts: number;
+  currentPage: number;
+}
+
 @Injectable()
 export class ProductService {
   private readonly logger = new Logger(ProductService.name);
@@ -108,18 +116,6 @@ export class ProductService {
       .exec();
 
     return sellers.map((seller) => seller._id.toString());
-  }
-
-  /**
-   * Método privado para eliminar imágenes de Cloudinary
-   */
-  private async eliminarImagenesProducto(urls: string[]): Promise<void> {
-    if (!urls?.length) return;
-
-    const publicIds = urls.map((url) =>
-      this.cloudinaryService.extractPublicIdFromUrl(url),
-    );
-    await this.cloudinaryService.eliminarImagenesCloudinary(publicIds);
   }
 
   private async verifyProductOwnership(
@@ -297,32 +293,140 @@ export class ProductService {
       },
     };
   }
-
-  /**
-   * Corregir productos con isVisible: null -> true
-   * Mantiene los que tienen isVisible: false
+  /*
+   *  Obtener productos de tienda con filtros completos
    */
-  /* async fixNullVisibility(): Promise<{
-    modifiedCount: number;
-    matchedCount: number;
-  }> {
-    const result = await this.productModel.updateMany(
-      {
-        $or: [{ isVisible: null }, { isVisible: { $exists: false } }],
-      },
-      { $set: { isVisible: true } },
-    );
+  async getStoreProductsWithFilters(
+    storeId: string,
+    query: GetStoreProductsQueryDto,
+  ): Promise<StoreProductsResponse> {
+    // Validar ObjectId
+    this.validateObjectId(storeId, 'ID de tienda');
 
-    this.logger.log(
-      `Fixed visibility: ${result.modifiedCount} products updated out of ${result.matchedCount} matched`,
-    );
+    // Verificar que la tienda existe
+    const store = await this.userModel
+      .findById(storeId)
+      .select('role name')
+      .lean()
+      .exec();
 
-    return {
-      modifiedCount: result.modifiedCount,
-      matchedCount: result.matchedCount,
+    if (!store) {
+      throw new NotFoundException(`Tienda con ID: ${storeId} no encontrada`);
+    }
+
+    if (store.role !== 'tienda') {
+      throw new BadRequestException('El usuario no es una tienda');
+    }
+
+    const {
+      page = 1,
+      limit = 18,
+      orderBy = 'name',
+      order = 'asc',
+      p_category,
+      category,
+      search,
+      minPrice,
+      maxPrice,
+    } = query;
+
+    // ============================================
+    // CONSTRUIR FILTRO
+    // ============================================
+    const filter: any = {
+      seller: storeId,
     };
-  }*/
 
+    // Filtro por categoría
+    if (p_category && p_category !== 'todos') {
+      // Buscar la categoría padre en PRODUCT_CATEGORIES
+      const parentCategory = PRODUCT_CATEGORIES.find(
+        (cat) => cat.name === p_category,
+      );
+
+      if (parentCategory && parentCategory.subcategories.length > 0) {
+        // Filtrar por todas las subcategorías de esa categoría padre
+        filter.category = { $in: parentCategory.subcategories };
+      } else {
+        // Si no tiene subcategorías o no se encuentra, filtrar por el nombre exacto
+        filter.category = p_category;
+      }
+    }
+
+    if (category && category !== 'todos') {
+      filter.category = category;
+    }
+
+    // Filtro por búsqueda en nombre y descripción
+    if (search?.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      filter.$or = [{ name: searchRegex }, { description: searchRegex }];
+    }
+
+    // Filtro por rango de precio
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.price = {};
+      if (minPrice !== undefined) {
+        filter.price.$gte = minPrice;
+      }
+      if (maxPrice !== undefined) {
+        filter.price.$lte = maxPrice;
+      }
+    }
+
+    // ============================================
+    // ORDENAMIENTO
+    // ============================================
+    const sortDirection = order === 'desc' ? -1 : 1;
+    const sortOptions: Record<string, 1 | -1> = {};
+
+    switch (orderBy) {
+      case 'price':
+        sortOptions.price = sortDirection;
+        sortOptions.createdAt = -1; // Secundario
+        break;
+      case 'createdAt':
+        sortOptions.createdAt = sortDirection;
+        break;
+      case 'name':
+      default:
+        sortOptions.name = sortDirection;
+        sortOptions.createdAt = -1; // Secundario
+        break;
+    }
+
+    // ============================================
+    // EJECUTAR QUERIES EN PARALELO
+    // ============================================
+    try {
+      const [products, totalProducts] = await Promise.all([
+        this.productModel
+          .find(filter)
+          .sort(sortOptions)
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean()
+          .exec(),
+        this.productModel.countDocuments(filter),
+      ]);
+
+      const totalPages = Math.ceil(totalProducts / limit);
+
+      return {
+        success: true,
+        products: products as Product[],
+        totalPages,
+        totalProducts,
+        currentPage: page,
+      };
+    } catch (error) {
+      this.logger.error('Error al obtener productos de tienda:', error);
+      throw new HttpException(
+        'Error al obtener productos de la tienda',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
   /**
    * Obtener productos recomendados basados en el carrito
    * Obtiene la ubicación de los sellers del carrito
@@ -567,53 +671,6 @@ export class ProductService {
     }
 
     return products;
-  }
-
-  /**
-   * Buscar productos de una tienda específica con filtros
-   */
-  async findProductByStore(
-    seller: string,
-    page: number = 1,
-    limit: number = 10,
-    orderBy: string = 'createdAt',
-    category: string = 'todos los productos',
-  ): Promise<{ products: Product[]; totalPages: number }> {
-    const cleanedSellerId = seller.trim();
-
-    // Validar ObjectId
-    this.validateObjectId(cleanedSellerId, 'ID de vendedor');
-
-    const filter: ProductFilter = { seller: cleanedSellerId };
-
-    if (category !== 'todos los productos') {
-      filter.category = category;
-    }
-
-    const sortObject: any = {};
-    if (orderBy !== 'createdAt') {
-      sortObject[orderBy] = 1;
-    }
-    sortObject['createdAt'] = -1;
-
-    // Ejecutar queries en paralelo
-    const [products, totalProducts] = await Promise.all([
-      this.productModel
-        .find(filter)
-        .sort(sortObject)
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.productModel.countDocuments(filter),
-    ]);
-
-    const totalPages = Math.ceil(totalProducts / limit);
-
-    return {
-      products,
-      totalPages,
-    };
   }
 
   /**

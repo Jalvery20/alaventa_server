@@ -328,3 +328,55 @@ export class ProductSearchDto {
   @Min(0)
   maxPrice?: number;
 }
+
+/**
+ * DTO para obtener productos de tienda con filtros
+ */
+export class GetStoreProductsQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['name', 'price', 'createdAt'])
+  orderBy?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['asc', 'desc'])
+  order?: string;
+
+  @IsOptional()
+  @IsString()
+  p_category?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => parseFloat(value))
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => parseFloat(value))
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
+}

@@ -21,6 +21,7 @@ import {
   DashboardStats,
   ProductService,
   SellerProductsResponse,
+  StoreProductsResponse,
 } from './product.service';
 import { Product } from './model/product.schema';
 import {
@@ -30,9 +31,9 @@ import {
   CategoryProductDto,
   CreateProductDto,
   ExportProductsDto,
+  GetStoreProductsQueryDto,
   ProductSearchDto,
   SellerProductsQueryDto,
-  StoreCategoryProductDto,
   ToggleVisibilityDto,
   UpdateProductDto,
 } from './dto/productDto';
@@ -95,23 +96,13 @@ export class ProductController {
   }
 
   @Get('/store/:id')
-  async obtenerPorTienda(
+  @HttpCode(HttpStatus.OK)
+  async fetchByStore(
     @Param('id') id: string,
-    @Query() query: StoreCategoryProductDto,
-  ): Promise<any> {
-    const {
-      page = 1,
-      limit = 10,
-      orderBy = 'createdAt',
-      category = 'todos los productos',
-    } = query;
-    return this.productService.findProductByStore(
-      id,
-      page,
-      limit,
-      orderBy,
-      category,
-    );
+    @Query(new ValidationPipe({ transform: true, whitelist: true }))
+    query: GetStoreProductsQueryDto,
+  ): Promise<StoreProductsResponse> {
+    return this.productService.getStoreProductsWithFilters(id, query);
   }
 
   @Get('/search/:name')
