@@ -129,23 +129,42 @@ export class ProductController {
   @Get('/category/:category')
   async obtenerPorCategoria(
     @Param('category') category: string,
-    @Query() query: CategoryProductDto,
-  ): Promise<any> {
+    @Query(new ValidationPipe({ transform: true })) query: CategoryProductDto,
+  ): Promise<{
+    products: Product[];
+    totalPages: number;
+    totalProducts: number;
+    currentPage: number;
+  }> {
     const {
       page = 1,
-      limit = 10,
+      limit = 18,
       orderBy = 'createdAt',
+      order = 'desc',
       province = 'Villa Clara',
       municipality = 'todos',
+      category: subCategory, // subcategoría del query param
+      minPrice,
+      maxPrice,
     } = query;
-    return this.productService.findProductByCategory(
-      category,
+
+    const result = await this.productService.findProductByCategory(
+      category, // Categoría principal de la URL
       page,
       limit,
       orderBy,
+      order,
       province,
       municipality,
+      subCategory, // Subcategoría opcional del filtro
+      minPrice,
+      maxPrice,
     );
+
+    return {
+      ...result,
+      currentPage: page,
+    };
   }
 
   /**

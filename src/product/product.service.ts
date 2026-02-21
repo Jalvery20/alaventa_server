@@ -640,18 +640,7 @@ export class ProductService {
 
     return {
       ...productoData,
-      seller: {
-        name: seller.name,
-        province: seller.province,
-        municipality: seller.municipality,
-        phoneNumber: seller.phoneNumber,
-        role: seller.role,
-        storeDetails: {
-          storePic: seller.storeDetails?.storePic,
-          schedule: seller.storeDetails?.schedule,
-          delivery: seller.storeDetails?.delivery,
-        },
-      },
+      seller,
     };
   }
 
@@ -832,77 +821,159 @@ export class ProductService {
    * Buscar productos por categoría
    */
   async findProductByCategory(
-    category: string,
+    p_category: string,
     page: number,
     limit: number,
     orderBy: string,
+    order: string,
     province: string,
     municipality: string,
-  ): Promise<any> {
-    const cleanedCategory = category.trim();
-    let categoriesToSearch = [cleanedCategory];
+    subCategory?: string,
+    minPrice?: number,
+    maxPrice?: number,
+  ): Promise<{
+    products: Product[];
+    totalPages: number;
+    totalProducts: number;
+  }> {
+    // Decodificar la categoría (puede venir con guiones desde la URL)
+    const decodedPCategory = decodeURIComponent(p_category)
+      .replace(/-/g, ' ')
+      .trim();
 
-    const mainCategory = PRODUCT_CATEGORIES.find(
-      (cat) => cat.name.toLowerCase() === cleanedCategory.toLowerCase(),
-    );
-
-    if (mainCategory) {
-      categoriesToSearch = [
-        mainCategory.name,
-        ...mainCategory.subcategories.map((subcat) => subcat),
-      ];
-    }
-
-    // Construir query
-    const query: Record<string, any> = {};
-
-    if (cleanedCategory.toLowerCase() !== 'todos los productos') {
-      query.category = { $in: categoriesToSearch };
-    }
-
-    // Obtener vendedores permitidos
+    // Obtener vendedores permitidos según ubicación
     const sellerIdsAllowed = await this.getAllowedSellerIds(
       province,
       municipality,
     );
-    query.seller = { $in: sellerIdsAllowed };
 
-    // Construir objeto de ordenamiento
-    const sortObject: Record<string, any> = {};
-    if (orderBy !== 'createdAt') {
-      sortObject[orderBy] = 1;
+    if (sellerIdsAllowed.length === 0) {
+      return {
+        products: [],
+        totalPages: 0,
+        totalProducts: 0,
+      };
     }
-    sortObject['createdAt'] = -1;
 
-    // Ejecutar queries en paralelo
-    const [products, totalProducts] = await Promise.all([
-      this.productModel
-        .find(query)
-        .populate({
-          path: 'seller',
-          select:
-            'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
-        })
-        .sort(sortObject)
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.productModel.countDocuments(query),
-    ]);
+    // ============================================
+    // CONSTRUIR QUERY BASE
+    // ============================================
+    const query: Record<string, any> = {
+      seller: { $in: sellerIdsAllowed },
+      isVisible: true,
+      amount: { $gt: 0 },
+    };
 
-    if (!products || products.length === 0) {
-      throw new NotFoundException(
-        `No se encontraron productos en la categoría '${category}'`,
+    // ============================================
+    // VERIFICAR SI ES "TODOS" (caso especial)
+    // ============================================
+    const normalizedCategory = decodedPCategory.toLowerCase();
+    const isTodosCategory =
+      normalizedCategory === 'todos' ||
+      normalizedCategory === 'todos los productos';
+
+    // Si NO es "todos", aplicar filtro de categoría
+    if (!isTodosCategory) {
+      // Buscar la categoría principal en PRODUCT_CATEGORIES
+      const mainCategory = PRODUCT_CATEGORIES.find(
+        (cat) => cat.name.toLowerCase() === normalizedCategory,
+      );
+
+      if (!mainCategory) {
+        throw new NotFoundException(`Categoría "${p_category}" no encontrada`);
+      }
+
+      // ============================================
+      // FILTRAR POR CATEGORÍA/SUBCATEGORÍA
+      // ============================================
+
+      // Si se especificó una subcategoría específica en el filtro
+      if (subCategory && subCategory.toLowerCase() !== 'todos') {
+        // Verificar que la subcategoría pertenece a la categoría principal
+        const isValidSubcategory = mainCategory.subcategories.some(
+          (sub) => sub.toLowerCase() === subCategory.toLowerCase(),
+        );
+
+        if (isValidSubcategory) {
+          query.category = subCategory;
+        } else {
+          // Subcategoría inválida, mostrar todas las de la categoría principal
+          query.category = { $in: [...mainCategory.subcategories] };
+        }
+      }
+      // Si no hay subcategoría específica, buscar en TODAS las subcategorías
+      else {
+        if (mainCategory.subcategories.length > 0) {
+          query.category = { $in: [...mainCategory.subcategories] };
+        }
+      }
+    }
+    // Si es "todos", NO agregamos filtro de categoría (muestra todo)
+
+    // ============================================
+    // FILTRO DE PRECIO
+    // ============================================
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      query.price = {};
+      if (minPrice !== undefined) {
+        query.price.$gte = minPrice;
+      }
+      if (maxPrice !== undefined) {
+        query.price.$lte = maxPrice;
+      }
+    }
+
+    // ============================================
+    // CONSTRUIR ORDENAMIENTO
+    // ============================================
+    const sortDirection = order === 'desc' ? -1 : 1;
+    const sortObject: Record<string, 1 | -1> = {};
+
+    switch (orderBy) {
+      case 'price':
+        sortObject.price = sortDirection;
+        sortObject.createdAt = -1;
+        break;
+      case 'name':
+        sortObject.name = sortDirection;
+        sortObject.createdAt = -1;
+        break;
+      case 'createdAt':
+      default:
+        sortObject.createdAt = sortDirection;
+        break;
+    }
+
+    try {
+      const [products, totalProducts] = await Promise.all([
+        this.productModel
+          .find(query)
+          .populate({
+            path: 'seller',
+            select:
+              'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
+          })
+          .sort(sortObject)
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean()
+          .exec(),
+        this.productModel.countDocuments(query),
+      ]);
+
+      const totalPages = Math.ceil(totalProducts / limit);
+
+      return {
+        products: products as Product[],
+        totalPages,
+        totalProducts,
+      };
+    } catch (error) {
+      throw new HttpException(
+        'Error al buscar productos por categoría',
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
-
-    const totalPages = Math.ceil(totalProducts / limit);
-
-    return {
-      products,
-      totalPages,
-    };
   }
 
   /**

@@ -1,10 +1,5 @@
 export const PRODUCT_CATEGORIES = [
   {
-    name: 'Todos los productos',
-    imgUrl: '/static/todos los productos.webp',
-    subcategories: [],
-  },
-  {
     name: 'Hogar',
     imgUrl: '/static/utiles del hogar.webp',
     subcategories: [

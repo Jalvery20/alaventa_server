@@ -201,16 +201,42 @@ export class CategoryProductDto {
   @IsOptional()
   @Transform(({ value }) => parseInt(value))
   @IsInt({ message: 'La página debe ser un número entero' })
+  @Min(1)
   page?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value))
   @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1)
+  @Max(100)
   limit?: number;
 
   @IsOptional()
   @IsString({ message: 'El orden debe ser una cadena de texto' })
+  @IsIn(['name', 'price', 'createdAt'])
   orderBy?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['asc', 'desc'])
+  order?: string;
+
+  // Subcategoría para filtrar dentro de la categoría principal
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value ? parseFloat(value) : undefined))
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => (value ? parseFloat(value) : undefined))
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
 }
 
 export class StoreCategoryProductDto {
