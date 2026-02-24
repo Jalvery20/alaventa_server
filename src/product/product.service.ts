@@ -755,8 +755,7 @@ export class ProductService {
           .find(filter)
           .populate({
             path: 'seller',
-            select:
-              'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
+            select: 'name phoneNumber role storeDetails province municipality',
           })
           .sort(sortObject)
           .skip((page - 1) * limit)
@@ -950,8 +949,7 @@ export class ProductService {
           .find(query)
           .populate({
             path: 'seller',
-            select:
-              'name phoneNumber role storeDetails.storePic storeDetails.delivery province municipality',
+            select: 'name phoneNumber role storeDetails province municipality',
           })
           .sort(sortObject)
           .skip((page - 1) * limit)
