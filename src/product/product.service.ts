@@ -449,6 +449,18 @@ export class ProductService {
       this.validateObjectId(id, 'ID de producto'),
     );
 
+    // Obtener solo vendedores habilitados
+    const allowedSellers = await this.userModel
+      .find({
+        _id: { $in: storeIds },
+        isAllowed: true,
+      })
+      .select('_id')
+      .lean()
+      .exec();
+
+    const allowedSellerIds = allowedSellers.map((s) => s._id.toString());
+
     const baseFilter = {
       _id: { $nin: productIdsToExclude },
       amount: { $gt: 0 },
@@ -457,14 +469,16 @@ export class ProductService {
 
     const populateOptions = {
       path: 'seller',
-      select: 'name phoneNumber role storeDetails province municipality',
+      select:
+        'name phoneNumber role storeDetails province municipality isAllowed',
+      match: { isAllowed: true },
     };
 
     try {
       let recommendations: Product[] = [];
       let remainingLimit = limit;
 
-      // PRIORIDAD 1: Productos de las mismas categorías (cualquier tienda)
+      // PRIORIDAD 1: Productos de las mismas categorías
       if (remainingLimit > 0) {
         const categoryProducts = await this.productModel
           .find({
@@ -473,35 +487,39 @@ export class ProductService {
           })
           .populate(populateOptions)
           .sort({ createdAt: -1 })
-          .limit(remainingLimit)
+          .limit(remainingLimit * 2) // Traer más para compensar filtrado
           .lean()
           .exec();
 
-        recommendations = [...categoryProducts];
+        //  Filtrar productos cuyo seller fue populado correctamente
+        const validProducts = categoryProducts.filter((p) => p.seller !== null);
+        recommendations = validProducts.slice(0, remainingLimit);
         remainingLimit = limit - recommendations.length;
 
-        // Actualizar exclusiones para evitar duplicados
-        const foundIds = categoryProducts.map((p) => p._id.toString());
+        const foundIds = recommendations.map((p) => p._id.toString());
         baseFilter._id = { $nin: [...productIdsToExclude, ...foundIds] };
       }
 
-      // PRIORIDAD 2: Productos de las mismas tiendas (cualquier categoría)
-      if (remainingLimit > 0) {
+      // PRIORIDAD 2: Productos de las mismas tiendas habilitadas
+      if (remainingLimit > 0 && allowedSellerIds.length > 0) {
         const storeProducts = await this.productModel
           .find({
             ...baseFilter,
-            seller: { $in: storeIds },
+            seller: { $in: allowedSellerIds },
           })
           .populate(populateOptions)
           .sort({ createdAt: -1 })
-          .limit(remainingLimit)
+          .limit(remainingLimit * 2)
           .lean()
           .exec();
 
-        recommendations = [...recommendations, ...storeProducts];
+        const validProducts = storeProducts.filter((p) => p.seller !== null);
+        recommendations = [
+          ...recommendations,
+          ...validProducts.slice(0, remainingLimit),
+        ];
         remainingLimit = limit - recommendations.length;
 
-        // Actualizar exclusiones
         baseFilter._id = {
           $nin: [
             ...productIdsToExclude,
@@ -510,17 +528,21 @@ export class ProductService {
         };
       }
 
-      // PRIORIDAD 3 (FALLBACK): Productos recientes de cualquier tienda
+      // PRIORIDAD 3: Productos recientes de cualquier tienda habilitada
       if (remainingLimit > 0) {
         const recentProducts = await this.productModel
           .find(baseFilter)
           .populate(populateOptions)
           .sort({ createdAt: -1 })
-          .limit(remainingLimit)
+          .limit(remainingLimit * 2)
           .lean()
           .exec();
 
-        recommendations = [...recommendations, ...recentProducts];
+        const validProducts = recentProducts.filter((p) => p.seller !== null);
+        recommendations = [
+          ...recommendations,
+          ...validProducts.slice(0, remainingLimit),
+        ];
       }
 
       return recommendations as Product[];
@@ -532,7 +554,6 @@ export class ProductService {
       );
     }
   }
-
   async toggleProductVisibility(
     productId: string,
     isVisible: boolean,
@@ -651,7 +672,13 @@ export class ProductService {
     // Validar ObjectId
     this.validateObjectId(seller, 'ID de vendedor');
 
-    const products = await this.productModel.find({ seller }).lean().exec();
+    const products = await this.productModel
+      .find({
+        seller,
+        isVisible: true,
+      })
+      .lean()
+      .exec();
 
     if (!products || products.length === 0) {
       throw new NotFoundException(
@@ -799,7 +826,10 @@ export class ProductService {
     );
 
     const products = await this.productModel
-      .find({ seller: { $in: sellerIdsAllowed } })
+      .find({
+        seller: { $in: sellerIdsAllowed },
+        isVisible: true,
+      })
       .populate({
         path: 'seller',
         select: 'name phoneNumber role storeDetails province municipality',
