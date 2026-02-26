@@ -335,6 +335,7 @@ export class ProductService {
     // ============================================
     const filter: any = {
       seller: storeId,
+      isVisible: true,
     };
 
     // Filtro por categoría
@@ -383,15 +384,15 @@ export class ProductService {
     switch (orderBy) {
       case 'price':
         sortOptions.price = sortDirection;
-        sortOptions.createdAt = -1; // Secundario
+        sortOptions.updatedAt = -1;
         break;
       case 'createdAt':
-        sortOptions.createdAt = sortDirection;
+        sortOptions.updatedAt = sortDirection;
         break;
       case 'name':
       default:
         sortOptions.name = sortDirection;
-        sortOptions.createdAt = -1; // Secundario
+        sortOptions.updatedAt = -1;
         break;
     }
 
@@ -486,7 +487,7 @@ export class ProductService {
             category: { $in: categories },
           })
           .populate(populateOptions)
-          .sort({ createdAt: -1 })
+          .sort({ updatedAt: -1 })
           .limit(remainingLimit * 2) // Traer más para compensar filtrado
           .lean()
           .exec();
@@ -508,7 +509,7 @@ export class ProductService {
             seller: { $in: allowedSellerIds },
           })
           .populate(populateOptions)
-          .sort({ createdAt: -1 })
+          .sort({ updatedAt: -1 })
           .limit(remainingLimit * 2)
           .lean()
           .exec();
@@ -533,7 +534,7 @@ export class ProductService {
         const recentProducts = await this.productModel
           .find(baseFilter)
           .populate(populateOptions)
-          .sort({ createdAt: -1 })
+          .sort({ updatedAt: -1 })
           .limit(remainingLimit * 2)
           .lean()
           .exec();
@@ -619,7 +620,7 @@ export class ProductService {
       this.productModel
         .find()
         .select('name price category imgUrl createdAt seller')
-        .sort({ createdAt: -1 })
+        .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean()
@@ -759,20 +760,18 @@ export class ProductService {
     switch (sortBy) {
       case 'price_asc':
         sortObject.price = 1;
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
       case 'price_desc':
         sortObject.price = -1;
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
       case 'newest':
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
       case 'relevance':
       default:
-        // Con $regex no se puede usar textScore
-        // Ordenar por fecha como fallback para relevancia
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
     }
 
@@ -834,7 +833,7 @@ export class ProductService {
         path: 'seller',
         select: 'name phoneNumber role storeDetails province municipality',
       })
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1 })
       .limit(10)
       .lean()
       .exec();
@@ -961,15 +960,15 @@ export class ProductService {
     switch (orderBy) {
       case 'price':
         sortObject.price = sortDirection;
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
       case 'name':
         sortObject.name = sortDirection;
-        sortObject.createdAt = -1;
+        sortObject.updatedAt = -1;
         break;
       case 'createdAt':
       default:
-        sortObject.createdAt = sortDirection;
+        sortObject.updatedAt = sortDirection;
         break;
     }
 
