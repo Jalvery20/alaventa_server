@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
@@ -273,7 +274,10 @@ export class UsersService {
   /**
    * Busca usuario por ID y lanza excepción si no existe
    */
-  private async findUserByIdOrFail(id: string): Promise<User> {
+  private async findUserByIdOrFail(
+    id: string,
+    checkAuth: boolean = false,
+  ): Promise<User> {
     this.validateObjectId(id, 'ID de usuario');
 
     const user = await this.userModel
@@ -283,6 +287,9 @@ export class UsersService {
       .exec();
 
     if (!user) {
+      if (checkAuth) {
+        throw new UnauthorizedException('Usuario no autenticado');
+      }
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
     delete user.isAllowed;
@@ -1090,7 +1097,7 @@ export class UsersService {
    * Obtener usuario por ID
    */
   async getUserById(id: string): Promise<User> {
-    return this.findUserByIdOrFail(id);
+    return this.findUserByIdOrFail(id, true);
   }
 
   /**

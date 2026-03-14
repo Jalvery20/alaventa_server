@@ -35,8 +35,7 @@ async function bootstrap() {
 
         return new BadRequestException({
           statusCode: 400,
-          message: 'Error de validación',
-          errors: messages || 'Datos inválidos',
+          message: messages || 'Datos inválidos',
         });
       },
     }),

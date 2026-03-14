@@ -349,10 +349,10 @@ export class UpdatePasswordDto {
   @MinLength(8, {
     message: 'La nueva contraseña debe tener al menos 8 caracteres',
   })
-  @MaxLength(50, {
-    message: 'La nueva contraseña no debe tener más de 50 caracteres',
+  @MaxLength(40, {
+    message: 'La nueva contraseña no debe tener más de 40 caracteres',
   })
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$/, {
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,40}$/, {
     message: 'La nueva contraseña debe incluir letras y números',
   })
   newPassword: string;
