@@ -299,7 +299,7 @@ export class UsersService {
       delete user.storeDetails?.categories;
     }
 
-    return user as User;
+    return user as unknown as User;
   }
 
   /**
@@ -881,7 +881,7 @@ export class UsersService {
         try {
           // Eliminar imágenes de productos
           if (products.length > 0) {
-            await this.deleteProductImages(products as Product[]);
+            await this.deleteProductImages(products as unknown as Product[]);
           }
 
           // Eliminar imágenes de tiendas
@@ -1090,7 +1090,7 @@ export class UsersService {
 
     const totalPages = Math.ceil(total / limit);
 
-    return { users: users as User[], total, totalPages };
+    return { users: users as unknown as User[], total, totalPages };
   }
 
   /**
@@ -1187,7 +1187,7 @@ export class UsersService {
 
     const totalPages = Math.ceil(total / limit);
 
-    return { stores: stores as User[], total, totalPages };
+    return { stores: stores as unknown as User[], total, totalPages };
   }
 
   /**
@@ -1212,7 +1212,7 @@ export class UsersService {
       );
     }
 
-    return user as User;
+    return user as unknown as User;
   }
 
   // ============================================
@@ -1247,7 +1247,7 @@ export class UsersService {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
 
-    return updatedUser as User;
+    return updatedUser as unknown as User;
   }
 
   /**
@@ -1363,7 +1363,7 @@ export class UsersService {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
 
-    return updatedUser as User;
+    return updatedUser as unknown as User;
   }
 
   /**
@@ -1385,7 +1385,7 @@ export class UsersService {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
 
-    return updatedUser as User;
+    return updatedUser as unknown as User;
   }
 
   /**
@@ -1407,7 +1407,7 @@ export class UsersService {
       throw new NotFoundException(`Usuario con ID: ${id} no encontrado`);
     }
 
-    return updatedUser as User;
+    return updatedUser as unknown as User;
   }
 
   /**
@@ -1818,7 +1818,7 @@ export class UsersService {
         try {
           // Eliminar imágenes de productos
           if (products.length > 0) {
-            await this.deleteProductImages(products as Product[]);
+            await this.deleteProductImages(products as unknown as Product[]);
             this.logger.log(
               `Eliminadas imágenes de ${products.length} productos del usuario ${id}`,
             );

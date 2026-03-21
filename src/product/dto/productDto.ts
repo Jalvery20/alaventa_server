@@ -134,30 +134,34 @@ export class UpdateProductDto {
 export class SellerProductsQueryDto {
   @IsOptional()
   @Transform(({ value }) => parseInt(value) || 1)
-  @IsInt()
-  @Min(1)
+  @IsInt({ message: 'La página debe ser un número entero' })
+  @Min(1, { message: 'La página debe ser mayor o igual a 1' })
   page?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value) || 20)
-  @IsInt()
-  @Min(1)
+  @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1, { message: 'El límite debe ser mayor o igual a 1' })
   limit?: number;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La búsqueda debe ser una cadena de texto' })
   search?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La categoría debe ser una cadena de texto' })
   category?: string;
 
   @IsOptional()
-  @IsIn(['all', 'available', 'out-of-stock', 'hidden'])
+  @IsIn(['all', 'available', 'out-of-stock', 'hidden'], {
+    message: 'El estado debe ser all, available, out-of-stock o hidden',
+  })
   status?: 'all' | 'available' | 'out-of-stock' | 'hidden';
 
   @IsOptional()
-  @IsIn(['name', 'price-asc', 'price-desc', 'stock', 'newest'])
+  @IsIn(['name', 'price-asc', 'price-desc', 'stock', 'newest'], {
+    message: 'El criterio de orden no es válido',
+  })
   sortBy?: 'name' | 'price-asc' | 'price-desc' | 'stock' | 'newest';
 }
 
@@ -217,25 +221,25 @@ export class CategoryProductDto {
   orderBy?: string;
 
   @IsOptional()
-  @IsString()
-  @IsIn(['asc', 'desc'])
+  @IsString({ message: 'El orden debe ser una cadena de texto' })
+  @IsIn(['asc', 'desc'], { message: 'El orden debe ser asc o desc' })
   order?: string;
 
   // Subcategoría para filtrar dentro de la categoría principal
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La categoría debe ser una cadena de texto' })
   category?: string;
 
   @IsOptional()
   @Transform(({ value }) => (value ? parseFloat(value) : undefined))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio mínimo debe ser un número' })
+  @Min(0, { message: 'El precio mínimo debe ser mayor o igual a 0' })
   minPrice?: number;
 
   @IsOptional()
   @Transform(({ value }) => (value ? parseFloat(value) : undefined))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio máximo debe ser un número' })
+  @Min(0, { message: 'El precio máximo debe ser mayor o igual a 0' })
   maxPrice?: number;
 }
 
@@ -268,19 +272,21 @@ export interface ProductFilter {
 
 export class ExportProductsDto {
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La categoría debe ser una cadena de texto' })
   category?: string;
 
   @IsOptional()
-  @IsIn(['all', 'available', 'out-of-stock', 'hidden'])
+  @IsIn(['all', 'available', 'out-of-stock', 'hidden'], {
+    message: 'El estado debe ser all, available, out-of-stock o hidden',
+  })
   status?: 'all' | 'available' | 'out-of-stock' | 'hidden';
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La fecha de inicio debe ser una cadena de texto' })
   dateFrom?: string; // ISO date string
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La fecha de fin debe ser una cadena de texto' })
   dateTo?: string; // ISO date string
 }
 
@@ -294,24 +300,24 @@ export class CartRecommendationsDto {
   cartItems: CartItemDto[];
 
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(20)
+  @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1, { message: 'El límite debe ser mayor o igual a 1' })
+  @Max(20, { message: 'El límite no debe exceder 20' })
   @Type(() => Number)
   limit?: number = 8;
 }
 
 class CartItemDto {
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'La categoría debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'La categoría es requerida' })
   category: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'El ID del vendedor debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'El ID del vendedor es requerido' })
   sellerId: string; // seller ID
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'El ID del producto debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'El ID del producto es requerido' })
   productId: string; // Para excluirlo de las recomendaciones
 }
 
@@ -330,28 +336,30 @@ export class ProductSearchDto {
   limit?: number;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
   province?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
   municipality?: string;
 
   @IsOptional()
-  @IsString()
-  @IsIn(['relevance', 'price_asc', 'price_desc', 'newest', 'rating'])
+  @IsString({ message: 'El criterio de orden debe ser una cadena de texto' })
+  @IsIn(['relevance', 'price_asc', 'price_desc', 'newest', 'rating'], {
+    message: 'El criterio de orden no es válido',
+  })
   sortBy?: string;
 
   @IsOptional()
   @Transform(({ value }) => (value ? parseFloat(value) : undefined))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio mínimo debe ser un número' })
+  @Min(0, { message: 'El precio mínimo debe ser mayor o igual a 0' })
   minPrice?: number;
 
   @IsOptional()
   @Transform(({ value }) => (value ? parseFloat(value) : undefined))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio máximo debe ser un número' })
+  @Min(0, { message: 'El precio máximo debe ser mayor o igual a 0' })
   maxPrice?: number;
 }
 
@@ -361,48 +369,50 @@ export class ProductSearchDto {
 export class GetStoreProductsQueryDto {
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsInt()
-  @Min(1)
+  @IsInt({ message: 'La página debe ser un número entero' })
+  @Min(1, { message: 'La página debe ser mayor o igual a 1' })
   page?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsInt()
-  @Min(1)
-  @Max(100)
+  @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1, { message: 'El límite debe ser mayor o igual a 1' })
+  @Max(100, { message: 'El límite no debe exceder 100' })
   limit?: number;
 
   @IsOptional()
-  @IsString()
-  @IsIn(['name', 'price', 'createdAt'])
+  @IsString({ message: 'El criterio de orden debe ser una cadena de texto' })
+  @IsIn(['name', 'price', 'createdAt'], {
+    message: 'El criterio de orden debe ser name, price o createdAt',
+  })
   orderBy?: string;
 
   @IsOptional()
-  @IsString()
-  @IsIn(['asc', 'desc'])
+  @IsString({ message: 'El orden debe ser una cadena de texto' })
+  @IsIn(['asc', 'desc'], { message: 'El orden debe ser asc o desc' })
   order?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La categoría principal debe ser una cadena de texto' })
   p_category?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La categoría debe ser una cadena de texto' })
   category?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La búsqueda debe ser una cadena de texto' })
   search?: string;
 
   @IsOptional()
   @Transform(({ value }) => parseFloat(value))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio mínimo debe ser un número' })
+  @Min(0, { message: 'El precio mínimo debe ser mayor o igual a 0' })
   minPrice?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseFloat(value))
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio máximo debe ser un número' })
+  @Min(0, { message: 'El precio máximo debe ser mayor o igual a 0' })
   maxPrice?: number;
 }

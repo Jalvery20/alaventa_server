@@ -13,7 +13,7 @@ import { StoreDetails } from './store.details.schema';
   toJSON: {
     virtuals: true,
     transform: (_, ret) => {
-      delete ret.password;
+      //delete ret.password;
       delete ret.__v;
       return ret;
     },

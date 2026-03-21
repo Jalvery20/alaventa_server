@@ -131,7 +131,7 @@ export class ProductService {
         'No tienes permiso para modificar este producto',
       );
     }
-    return product;
+    return product as unknown as Product;
   }
 
   /**
@@ -278,7 +278,7 @@ export class ProductService {
     };
 
     return {
-      products: products as Product[],
+      products: products as unknown as Product[],
       pagination: {
         page,
         limit,
@@ -415,7 +415,7 @@ export class ProductService {
 
       return {
         success: true,
-        products: products as Product[],
+        products: products as unknown as Product[],
         totalPages,
         totalProducts,
         currentPage: page,
@@ -494,7 +494,10 @@ export class ProductService {
 
         //  Filtrar productos cuyo seller fue populado correctamente
         const validProducts = categoryProducts.filter((p) => p.seller !== null);
-        recommendations = validProducts.slice(0, remainingLimit);
+        recommendations = validProducts.slice(
+          0,
+          remainingLimit,
+        ) as unknown as Product[];
         remainingLimit = limit - recommendations.length;
 
         const foundIds = recommendations.map((p) => p._id.toString());
@@ -518,7 +521,7 @@ export class ProductService {
         recommendations = [
           ...recommendations,
           ...validProducts.slice(0, remainingLimit),
-        ];
+        ] as unknown as Product[];
         remainingLimit = limit - recommendations.length;
 
         baseFilter._id = {
@@ -543,7 +546,7 @@ export class ProductService {
         recommendations = [
           ...recommendations,
           ...validProducts.slice(0, remainingLimit),
-        ];
+        ] as unknown as Product[];
       }
 
       return recommendations as Product[];
@@ -568,7 +571,7 @@ export class ProductService {
       .lean()
       .exec();
 
-    return { success: true, product: updatedProduct as Product };
+    return { success: true, product: updatedProduct as unknown as Product };
   }
 
   /**
@@ -629,8 +632,8 @@ export class ProductService {
     ]);
 
     const totalPages = Math.ceil(total / limit);
-
-    return { products, total, totalPages };
+    const productsTyped = products as unknown as Product[];
+    return { products: productsTyped, total, totalPages };
   }
 
   /**
@@ -687,7 +690,7 @@ export class ProductService {
       );
     }
 
-    return products;
+    return products as unknown as Product[];
   }
 
   /**
@@ -794,7 +797,7 @@ export class ProductService {
       const totalPages = Math.ceil(total / limit);
 
       return {
-        products: products as Product[],
+        products: products as unknown as Product[],
         total,
         totalPages,
         currentPage: page,
@@ -842,7 +845,7 @@ export class ProductService {
       throw new NotFoundException('No se encontraron productos');
     }
 
-    return products;
+    return products as unknown as Product[];
   }
 
   /**
@@ -991,7 +994,7 @@ export class ProductService {
       const totalPages = Math.ceil(totalProducts / limit);
 
       return {
-        products: products as Product[],
+        products: products as unknown as Product[],
         totalPages,
         totalProducts,
       };
@@ -1188,7 +1191,7 @@ export class ProductService {
         this.eliminarImagenesEnBackground(imagenesAntiguasParaEliminar);
       }
 
-      return updatedProduct;
+      return updatedProduct as unknown as Product;
     } catch (error) {
       this.logger.error(`Error al actualizar producto ${id}:`, error);
 
@@ -1251,7 +1254,7 @@ export class ProductService {
         }
       }
 
-      return producto;
+      return producto as unknown as Product;
     } catch (error) {
       // Si falla eliminar de DB, no intentar eliminar de Cloudinary
       this.logger.error(`Error al eliminar producto ${id}:`, error);
@@ -1328,14 +1331,14 @@ export class ProductService {
           ? Math.round((cat.count / totalProducts) * 100 * 100) / 100
           : 0,
     }));
-
+    const recentProductsTyped = recentProducts as unknown as Product[];
     return {
       products: {
         total: totalProducts,
         available: availableProducts,
         outOfStock: outOfStockProducts,
       },
-      recentProducts,
+      recentProducts: recentProductsTyped,
       topCategories,
     };
   }

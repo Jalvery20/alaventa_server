@@ -18,7 +18,7 @@ export class PhoneService {
     try {
       // Utiliza el método find para obtener todos los documentos en la colección
       const phones = await this.phoneModel.find().lean().exec();
-      return phones;
+      return phones as unknown as Phone[];
     } catch (error) {
       // Maneja cualquier error que pueda ocurrir durante la operación
       throw error;

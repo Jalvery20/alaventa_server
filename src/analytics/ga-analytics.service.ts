@@ -201,6 +201,107 @@ export class GAAnalyticsService implements OnModuleInit {
     }
   }
 
+  async getTopVisitedProducts(period = '30d') {
+    if (!this.isConfigured) return [];
+
+    try {
+      const dateRange = this.getDateRange(period);
+
+      const excludedPrefixes = [
+        'tiendas',
+        'admin',
+        'buscar',
+        'carrito',
+        'como-funciona',
+        'preguntas-frecuentes',
+        'sobre-nosotros',
+        'vender',
+      ];
+      const excludePattern = excludedPrefixes.join('|');
+
+      const [response] = await this.client.runReport({
+        property: `properties/${this.propertyId}`,
+        dateRanges: [dateRange],
+        dimensions: [{ name: 'pagePath' }],
+        metrics: [
+          { name: 'screenPageViews' },
+          { name: 'activeUsers' },
+          { name: 'averageSessionDuration' },
+        ],
+        dimensionFilter: {
+          andGroup: {
+            expressions: [
+              {
+                filter: {
+                  fieldName: 'pagePath',
+                  stringFilter: {
+                    matchType: 'FULL_REGEXP',
+                    value: `^/(?!(${excludePattern})(/|$))[^/]+/[^/]+/?$`,
+                  },
+                },
+              },
+            ],
+          },
+        },
+        orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+        limit: 10,
+      });
+
+      return (response.rows || []).map((row) => ({
+        path: row.dimensionValues[0].value,
+        views: parseInt(row.metricValues[0].value) || 0,
+        users: parseInt(row.metricValues[1].value) || 0,
+        avgDuration: parseFloat(row.metricValues[2].value) || 0,
+      }));
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch GA top visited products',
+        error.message,
+      );
+      return [];
+    }
+  }
+
+  async getTopVisitedStores(period = '30d') {
+    if (!this.isConfigured) return [];
+
+    try {
+      const dateRange = this.getDateRange(period);
+
+      const [response] = await this.client.runReport({
+        property: `properties/${this.propertyId}`,
+        dateRanges: [dateRange],
+        dimensions: [{ name: 'pagePath' }],
+        metrics: [
+          { name: 'screenPageViews' },
+          { name: 'activeUsers' },
+          { name: 'averageSessionDuration' },
+        ],
+        dimensionFilter: {
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: {
+              matchType: 'FULL_REGEXP',
+              value: '^/tiendas/[^/]+/?$',
+            },
+          },
+        },
+        orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+        limit: 10,
+      });
+
+      return (response.rows || []).map((row) => ({
+        path: row.dimensionValues[0].value,
+        views: parseInt(row.metricValues[0].value) || 0,
+        users: parseInt(row.metricValues[1].value) || 0,
+        avgDuration: parseFloat(row.metricValues[2].value) || 0,
+      }));
+    } catch (error) {
+      this.logger.error('Failed to fetch GA top visited stores', error.message);
+      return [];
+    }
+  }
+
   async getDeviceBreakdown(period = '30d') {
     if (!this.isConfigured) return [];
 
@@ -254,21 +355,33 @@ export class GAAnalyticsService implements OnModuleInit {
 
   // Endpoint combinado para obtener todo de una vez
   async getFullGAReport(period = '30d') {
-    const [overview, trafficByDay, sources, topPages, devices, countries] =
-      await Promise.all([
-        this.getTrafficOverview(period),
-        this.getTrafficByDay(period),
-        this.getTrafficSources(period),
-        this.getTopPages(period),
-        this.getDeviceBreakdown(period),
-        this.getCountryBreakdown(period),
-      ]);
+    const [
+      overview,
+      trafficByDay,
+      sources,
+      topPages,
+      topVisitedProducts,
+      topVisitedStores,
+      devices,
+      countries,
+    ] = await Promise.all([
+      this.getTrafficOverview(period),
+      this.getTrafficByDay(period),
+      this.getTrafficSources(period),
+      this.getTopPages(period),
+      this.getTopVisitedProducts(period),
+      this.getTopVisitedStores(period),
+      this.getDeviceBreakdown(period),
+      this.getCountryBreakdown(period),
+    ]);
 
     return {
       overview,
       trafficByDay,
       sources,
       topPages,
+      topVisitedProducts,
+      topVisitedStores,
       devices,
       countries,
     };

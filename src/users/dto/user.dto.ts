@@ -97,59 +97,54 @@ function parseOptionalObject(value: any) {
 
 // DTO para geolocalización
 export class GeoLocationDTO {
-  @IsString()
-  @IsIn(['Point'])
+  @IsString({ message: 'El tipo debe ser una cadena de texto' })
+  @IsIn(['Point'], { message: 'El tipo debe ser Point' })
   type: string;
 
-  @IsArray()
-  @ArrayMaxSize(2)
-  @IsNumber({}, { each: true })
+  @IsArray({ message: 'Las coordenadas deben ser un array' })
+  @ArrayMaxSize(2, { message: 'Las coordenadas deben tener máximo 2 valores' })
+  @IsNumber({}, { each: true, message: 'Cada coordenada debe ser un número' })
   coordinates: number[]; // [longitude, latitude]
 }
 
 // DTO para opciones de entrega
 export class DeliveryOptionsDTO {
-  @IsBoolean()
+  @IsBoolean({ message: 'El campo pickup debe ser un booleano' })
   pickup: boolean;
 
-  @IsBoolean()
+  @IsBoolean({ message: 'El campo delivery debe ser un booleano' })
   delivery: boolean;
 }
 
 export class ScheduleDTO {
-  @IsString()
-  @IsIn([
-    'Lunes',
-    'Martes',
-    'Miércoles',
-    'Jueves',
-    'Viernes',
-    'Sábado',
-    'Domingo',
-  ])
+  @IsString({ message: 'El día debe ser una cadena de texto' })
+  @IsIn(
+    ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+    { message: 'El día debe ser un día de la semana válido' },
+  )
   day: string;
 
-  @IsString()
+  @IsString({ message: 'La hora de apertura debe ser una cadena de texto' })
   @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: 'openingTime debe tener formato HH:mm',
+    message: 'La hora de apertura debe tener formato HH:mm',
   })
   openingTime: string;
 
-  @IsString()
+  @IsString({ message: 'La hora de cierre debe ser una cadena de texto' })
   @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: 'closingTime debe tener formato HH:mm',
+    message: 'La hora de cierre debe tener formato HH:mm',
   })
   closingTime: string;
 }
 
 export class DeliveryOptionDTO {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsString({ message: 'La zona debe ser una cadena de texto' })
+  @MinLength(1, { message: 'La zona es requerida' })
+  @MaxLength(100, { message: 'La zona no debe exceder 100 caracteres' })
   zone: string;
 
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'El precio debe ser un número' })
+  @Min(0, { message: 'El precio debe ser mayor o igual a 0' })
   price: number;
 }
 
@@ -173,26 +168,30 @@ export class UpdateStoreCategoriesDto {
 }
 
 export class CreateUserDto {
-  @IsString()
-  @IsNotEmpty()
-  @Length(5, 100)
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'El nombre es requerido' })
+  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
   name?: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'La contraseña debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'La contraseña es requerida' })
   password: string;
 
-  @IsPhoneNumber()
+  @IsPhoneNumber(undefined, { message: 'El número de teléfono no es válido' })
   phoneNumber: string;
 
   @IsOptional()
-  @IsString()
-  @Length(10, 200)
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
+  @Length(10, 200, {
+    message: 'La dirección debe tener entre 10 y 200 caracteres',
+  })
   address?: string;
 
   @IsOptional()
-  @IsString()
-  @IsIn(['vendedor', 'tienda'])
+  @IsString({ message: 'El rol debe ser una cadena de texto' })
+  @IsIn(['vendedor', 'tienda'], {
+    message: 'El rol debe ser vendedor o tienda',
+  })
   role?: string;
 
   @IsOptional()
@@ -202,21 +201,23 @@ export class CreateUserDto {
 }
 
 export class CompleteUserDto {
-  @IsString()
-  @Length(5, 100)
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
+  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
   name: string;
 
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'La provincia debe tener entre 3 y 50 caracteres' })
   province: string;
 
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'El municipio debe tener entre 3 y 50 caracteres' })
   municipality: string;
 
   @IsOptional()
-  @IsString()
-  @Length(10, 200)
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
+  @Length(10, 200, {
+    message: 'La dirección debe tener entre 10 y 200 caracteres',
+  })
   address?: string;
 
   @IsOptional()
@@ -227,23 +228,25 @@ export class CompleteUserDto {
 
 export class UpdateUserDto {
   @IsOptional()
-  @IsString()
-  @Length(5, 100)
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
+  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
   name?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'La provincia debe tener entre 3 y 50 caracteres' })
   province?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'El municipio debe tener entre 3 y 50 caracteres' })
   municipality?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(10, 200)
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
+  @Length(10, 200, {
+    message: 'La dirección debe tener entre 10 y 200 caracteres',
+  })
   address?: string;
 
   @IsOptional()
@@ -254,38 +257,46 @@ export class UpdateUserDto {
 
 export class UpdateStoreDto {
   @IsOptional()
-  @IsString()
-  @Length(5, 100)
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
+  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
   name?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'La provincia debe tener entre 3 y 50 caracteres' })
   province?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'El municipio debe tener entre 3 y 50 caracteres' })
   municipality?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(10, 200)
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
+  @Length(10, 200, {
+    message: 'La dirección debe tener entre 10 y 200 caracteres',
+  })
   address?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La descripción debe ser una cadena de texto' })
   description?: string;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'Las categorías deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada categoría debe ser una cadena de texto',
+  })
   @Transform(({ value }) => parseStringArray(value))
   categories?: string[];
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'Los contactos deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada contacto debe ser una cadena de texto',
+  })
   @Transform(({ value }) => parseStringArray(value))
   contact?: string[];
 
@@ -302,28 +313,36 @@ export class UpdateStoreDto {
   schedule?: ScheduleDTO[];
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'Los métodos de pago deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada método de pago debe ser una cadena de texto',
+  })
   @Transform(({ value }) => parseStringArray(value))
   paymentMethods?: string[];
 }
 
 export class UpdateUserRoleDto {
-  @IsString()
-  @IsNotEmpty()
-  @IsIn(['administrador', 'vendedor', 'tienda'])
+  @IsString({ message: 'El rol debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'El rol es requerido' })
+  @IsIn(['administrador', 'vendedor', 'tienda'], {
+    message: 'El rol debe ser administrador, vendedor o tienda',
+  })
   role: string;
 }
 
 export class UpdateAvailableUserDto {
-  @IsBoolean()
-  @IsNotEmpty()
+  @IsBoolean({ message: 'isAllowed debe ser un booleano' })
+  @IsNotEmpty({ message: 'isAllowed es requerido' })
   isAllowed: boolean;
 }
 
 export class UpdateUserExpiryDateDto {
-  @IsDateString()
-  @IsNotEmpty()
+  @IsDateString(
+    {},
+    { message: 'La fecha de expiración debe ser una fecha válida' },
+  )
+  @IsNotEmpty({ message: 'La fecha de expiración es requerida' })
   expiryDate: Date;
 }
 
@@ -368,25 +387,25 @@ export class UpdatePasswordDto {
 
 export class getStoresDto {
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'La provincia debe tener entre 3 y 50 caracteres' })
   province?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'El municipio debe tener entre 3 y 50 caracteres' })
   municipality?: string;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
-  @Min(1)
+  @IsNumber({}, { message: 'La página debe ser un número' })
+  @Min(1, { message: 'La página debe ser mayor o igual a 1' })
   page?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
-  @Min(1)
+  @IsNumber({}, { message: 'El límite debe ser un número' })
+  @Min(1, { message: 'El límite debe ser mayor o igual a 1' })
   limit?: number;
 }
 
@@ -395,52 +414,65 @@ export class getStoresDto {
  */
 export class PatchStoreDetailsDto {
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La imagen debe ser una cadena de texto' })
   storePic?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La descripción debe ser una cadena de texto' })
   @MinLength(20, {
     message: 'La descripción debe tener al menos 20 caracteres',
   })
-  @MaxLength(1000)
+  @MaxLength(1000, {
+    message: 'La descripción no debe exceder 1000 caracteres',
+  })
   description?: string;
 
   @IsOptional()
-  @IsBoolean()
+  @IsBoolean({ message: 'is24Hours debe ser un booleano' })
   is24Hours?: boolean;
 
   @IsOptional()
-  @IsArray()
+  @IsArray({ message: 'El horario debe ser un array' })
   @ValidateNested({ each: true })
   @Type(() => ScheduleDTO)
-  @ArrayMaxSize(7)
+  @ArrayMaxSize(7, { message: 'El horario no debe tener más de 7 días' })
   schedule?: ScheduleDTO[];
 
   @IsOptional()
-  @IsArray()
+  @IsArray({ message: 'Las opciones de entrega deben ser un array' })
   @ValidateNested({ each: true })
   @Type(() => DeliveryOptionDTO)
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(20, {
+    message: 'No se pueden tener más de 20 zonas de entrega',
+  })
   @Transform(({ value }) => (value === null || value === 'null' ? null : value))
   delivery?: DeliveryOptionDTO[] | null;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(5)
+  @IsArray({ message: 'Los contactos deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada contacto debe ser una cadena de texto',
+  })
+  @ArrayMaxSize(5, { message: 'No se pueden tener más de 5 contactos' })
   contact?: string[];
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(10)
+  @IsArray({ message: 'Las categorías deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada categoría debe ser una cadena de texto',
+  })
+  @ArrayMaxSize(10, { message: 'No se pueden tener más de 10 categorías' })
   categories?: string[];
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(10)
+  @IsArray({ message: 'Los métodos de pago deben ser un array' })
+  @IsString({
+    each: true,
+    message: 'Cada método de pago debe ser una cadena de texto',
+  })
+  @ArrayMaxSize(10, { message: 'No se pueden tener más de 10 métodos de pago' })
   paymentMethods?: string[];
 
   @IsOptional()
@@ -473,24 +505,24 @@ export class PatchStoreDetailsDto {
  */
 export class PatchStoreDto {
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @MinLength(5, { message: 'El nombre debe tener al menos 5 caracteres' })
-  @MaxLength(100)
+  @MaxLength(100, { message: 'El nombre no debe exceder 100 caracteres' })
   name?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'La provincia debe tener entre 3 y 50 caracteres' })
   province?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(3, 50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @Length(3, 50, { message: 'El municipio debe tener entre 3 y 50 caracteres' })
   municipality?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(200)
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
+  @MaxLength(200, { message: 'La dirección no debe exceder 200 caracteres' })
   address?: string;
 
   @IsOptional()
@@ -510,25 +542,25 @@ export class PatchStoreDto {
  */
 export class PatchUserDto {
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @MinLength(5, { message: 'El nombre debe tener al menos 5 caracteres' })
   @MaxLength(100, { message: 'El nombre no puede exceder 100 caracteres' })
   name?: string;
 
   @IsOptional()
-  @IsString()
-  @MinLength(3)
-  @MaxLength(50)
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
+  @MinLength(3, { message: 'La provincia debe tener al menos 3 caracteres' })
+  @MaxLength(50, { message: 'La provincia no debe exceder 50 caracteres' })
   province?: string;
 
   @IsOptional()
-  @IsString()
-  @MinLength(3)
-  @MaxLength(50)
+  @IsString({ message: 'El municipio debe ser una cadena de texto' })
+  @MinLength(3, { message: 'El municipio debe tener al menos 3 caracteres' })
+  @MaxLength(50, { message: 'El municipio no debe exceder 50 caracteres' })
   municipality?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La dirección debe ser una cadena de texto' })
   address?: string;
 
   @IsOptional()
@@ -542,41 +574,47 @@ export class PatchUserDto {
 export class GetUsersQueryDto {
   // Búsqueda
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La búsqueda debe ser una cadena de texto' })
   search?: string;
 
   // Filtro por rol
   @IsOptional()
-  @IsIn(['all', 'administrador', 'vendedor', 'tienda'])
+  @IsIn(['all', 'administrador', 'vendedor', 'tienda'], {
+    message: 'El rol debe ser all, administrador, vendedor o tienda',
+  })
   role?: string;
 
   // Filtro por estado
   @IsOptional()
-  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'])
+  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'], {
+    message: 'El estado no es válido',
+  })
   status?: string;
 
   // Filtro por provincia
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
   province?: string;
 
   // Ordenamiento
   @IsOptional()
-  @IsIn(['newest', 'name', 'expiry', 'products'])
+  @IsIn(['newest', 'name', 'expiry', 'products'], {
+    message: 'El criterio de orden no es válido',
+  })
   sortBy?: string;
 
   // Paginación
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
-  @Min(1)
+  @IsNumber({}, { message: 'La página debe ser un número' })
+  @Min(1, { message: 'La página debe ser mayor o igual a 1' })
   page?: number;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
-  @Min(1)
-  @Max(100)
+  @IsNumber({}, { message: 'El límite debe ser un número' })
+  @Min(1, { message: 'El límite debe ser mayor o igual a 1' })
+  @Max(100, { message: 'El límite no debe exceder 100' })
   limit?: number;
 }
 
@@ -585,14 +623,18 @@ export class GetUsersQueryDto {
  */
 export class ExportUsersQueryDto {
   @IsOptional()
-  @IsIn(['all', 'administrador', 'vendedor', 'tienda'])
+  @IsIn(['all', 'administrador', 'vendedor', 'tienda'], {
+    message: 'El rol debe ser all, administrador, vendedor o tienda',
+  })
   role?: string;
 
   @IsOptional()
-  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'])
+  @IsIn(['all', 'active', 'expired', 'expiring-soon', 'disabled'], {
+    message: 'El estado no es válido',
+  })
   status?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'La provincia debe ser una cadena de texto' })
   province?: string;
 }
