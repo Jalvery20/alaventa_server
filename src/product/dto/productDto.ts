@@ -125,6 +125,23 @@ export class UpdateProductDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean({ message: 'isVisible debe ser un booleano' })
   isVisible?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    // Manejar si viene como string JSON o como array
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        // Si es un solo string, convertirlo a array
+        return [value];
+      }
+    }
+    return value;
+  })
+  @IsArray({ message: 'keepImages debe ser un array' })
+  @IsString({ each: true, message: 'Cada URL debe ser una cadena de texto' })
+  keepImages?: string[];
 }
 
 // ============================================

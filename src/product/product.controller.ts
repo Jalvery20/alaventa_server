@@ -264,12 +264,7 @@ export class ProductController {
   ): Promise<Product | null> {
     const sellerId = req.user.userId;
 
-    return this.productService.editarProducto(
-      id,
-      productoDto,
-      images,
-      sellerId,
-    );
+    return this.productService.editProduct(id, productoDto, images, sellerId);
   }
 
   /**

@@ -137,7 +137,7 @@ export class ProductService {
   /**
    * Eliminar imágenes en background sin bloquear response
    */
-  private async eliminarImagenesEnBackground(urls: string[]): Promise<void> {
+  private async deleteImagesInBackground(urls: string[]): Promise<void> {
     try {
       const publicIds = urls.map((url) =>
         this.cloudinaryService.extractPublicIdFromUrl(url),
@@ -1081,102 +1081,143 @@ export class ProductService {
   }
 
   /**
-   * Editar producto existente
+   * Edit existing product with intelligent image management
+   * - Keeps existing images specified in keepImages
+   * - Adds new images without deleting existing ones
+   * - Only deletes images that were removed by the user
    */
-  async editarProducto(
+  async editProduct(
     id: string,
-    productoDto: UpdateProductDto,
-    imagenes: Express.Multer.File[],
+    productDto: UpdateProductDto,
+    images: Express.Multer.File[],
     sellerId: string,
   ): Promise<Product> {
-    // Validar ObjectId
-    this.validateObjectId(id, 'ID de producto');
+    // Validate ObjectId
+    this.validateObjectId(id, 'Product ID');
 
-    // Obtener producto existente
-    const productoExistente = await this.productModel
-      .findById(id)
-      .lean()
-      .exec();
+    // Get existing product
+    const existingProduct = await this.productModel.findById(id).lean().exec();
 
-    if (!productoExistente) {
-      throw new NotFoundException(`Producto con ID ${id} no encontrado`);
+    if (!existingProduct) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    // Verificar ownership
-    if (productoExistente.seller.toString() !== sellerId) {
+    // Verify ownership
+    if (existingProduct.seller.toString() !== sellerId) {
       throw new ForbiddenException(
-        'No tienes permiso para editar este producto',
+        'You do not have permission to edit this product',
       );
     }
 
-    // Validar precio original si se proporciona
+    // Validate original price if provided
     if (
-      productoDto.originalPrice !== undefined &&
-      productoDto.price !== undefined &&
-      productoDto.originalPrice <= productoDto.price
+      productDto.originalPrice !== undefined &&
+      productDto.price !== undefined &&
+      productDto.originalPrice <= productDto.price
     ) {
       throw new BadRequestException(
-        'El precio original debe ser mayor al precio de venta',
+        'Original price must be greater than sale price',
       );
     }
 
-    // Preparar datos de actualización
-    const updateData: any = { ...productoDto };
+    // Prepare update data (without keepImages)
+    const { keepImages, ...restDto } = productDto;
+    const updateData: any = { ...restDto };
 
-    let imagenesAntiguasParaEliminar: string[] = [];
+    // ============================================
+    // INTELLIGENT IMAGE MANAGEMENT
+    // ============================================
 
-    // Manejo seguro de imágenes
-    if (imagenes && imagenes.length > 0) {
-      // Validar número de imágenes
-      if (imagenes.length > 5) {
-        throw new BadRequestException('Máximo 5 imágenes permitidas');
+    const originalImages = existingProduct.imgUrl || [];
+    let imagesToDelete: string[] = [];
+    let newUrls: string[] = [];
+
+    // Determine which images to keep
+    // If keepImages is defined, use it; otherwise, keep all originals
+    const imagesToKeep =
+      keepImages !== undefined
+        ? keepImages.filter((url) => originalImages.includes(url))
+        : originalImages;
+
+    // Calculate which images to delete (those that were there but are no longer in keepImages)
+    if (keepImages !== undefined) {
+      imagesToDelete = originalImages.filter(
+        (url) => !imagesToKeep.includes(url),
+      );
+    }
+
+    // ============================================
+    // UPLOAD NEW IMAGES (if any)
+    // ============================================
+
+    if (images && images.length > 0) {
+      const totalImages = imagesToKeep.length + images.length;
+
+      // Validate total image limit
+      if (totalImages > 5) {
+        throw new BadRequestException(
+          `Máximo de  5 imágenes permitidas. Tienes ${imagesToKeep.length} existentes y estás tratando de añadir ${images.length}`,
+        );
       }
 
       try {
-        // Paso 1: Subir nuevas imágenes PRIMERO
-        const uploadResult = await this.cloudinaryService.uploadImages(
-          imagenes,
-          {
-            folder: 'product',
-            maxWidth: 2000,
-            quality: 85,
-          },
-        );
+        const uploadResult = await this.cloudinaryService.uploadImages(images, {
+          folder: 'product',
+          maxWidth: 2000,
+          quality: 85,
+        });
 
-        // Verificar que se subieron correctamente
         if (uploadResult.success.length === 0) {
           throw new BadRequestException(
-            'No se pudo subir ninguna imagen nueva',
+            'No se pudieron cargar imágenes nuevas',
           );
         }
 
-        // Advertir si algunas fallaron
         if (uploadResult.failed.length > 0) {
           this.logger.warn(
-            `${uploadResult.failed.length} imagen(es) fallaron al subir`,
+            `${uploadResult.failed.length} imagen(es) no se pudieron cargar`,
             uploadResult.failed,
           );
         }
 
-        // Paso 2: Actualizar URLs en el objeto
-        updateData.imgUrl = uploadResult.success.map((img) => img.secure_url);
-
-        // Paso 3: Marcar imágenes antiguas para eliminar DESPUÉS
-        imagenesAntiguasParaEliminar = productoExistente.imgUrl || [];
+        newUrls = uploadResult.success.map((img) => img.secure_url);
       } catch (error) {
-        this.logger.error('Error al subir nuevas imágenes:', error);
+        this.logger.error('Error uploading new images:', error);
         throw new BadRequestException(
-          `Error al subir imágenes: ${error.message}`,
+          `Error subiendo imágenes: ${error.message}`,
         );
       }
     }
 
+    // ============================================
+    // BUILD FINAL IMAGE ARRAY
+    // ============================================
+
+    // Only update imgUrl if there were changes to the images
+    const hasImageChanges =
+      keepImages !== undefined || // Specified what to keep
+      newUrls.length > 0; // Added new ones
+
+    if (hasImageChanges) {
+      const finalImageUrls = [...imagesToKeep, ...newUrls];
+
+      // Validate at least one image
+      if (finalImageUrls.length === 0) {
+        throw new BadRequestException('Product must have at least one image');
+      }
+
+      updateData.imgUrl = finalImageUrls;
+    }
+
+    // ============================================
+    // UPDATE IN DATABASE
+    // ============================================
+
     try {
-      // Paso 4: Actualizar producto en DB
       const updatedProduct = await this.productModel
         .findByIdAndUpdate(id, updateData, {
           new: true,
-          runValidators: true, // Ejecutar validaciones del schema
+          runValidators: true,
         })
         .populate({
           path: 'seller',
@@ -1185,28 +1226,29 @@ export class ProductService {
         .lean()
         .exec();
 
-      // Paso 5: AHORA SÍ eliminar imágenes antiguas (en background)
-      if (imagenesAntiguasParaEliminar.length > 0) {
-        // No await - ejecutar en background
-        this.eliminarImagenesEnBackground(imagenesAntiguasParaEliminar);
+      // DELETE OLD IMAGES IN BACKGROUND (after success)
+      if (imagesToDelete.length > 0) {
+        this.logger.log(
+          `Deleting ${imagesToDelete.length} old image(s) from product ${id}`,
+        );
+        // No await - execute in background
+        this.deleteImagesInBackground(imagesToDelete);
       }
 
       return updatedProduct as unknown as Product;
     } catch (error) {
-      this.logger.error(`Error al actualizar producto ${id}:`, error);
+      this.logger.error(`Error updating product ${id}:`, error);
 
-      // 🔥 Rollback: Si falla actualizar DB, eliminar imágenes nuevas
-      if (updateData.imgUrl && updateData.imgUrl.length > 0) {
-        this.logger.warn('Ejecutando rollback de imágenes nuevas...');
-        const publicIds = updateData.imgUrl.map((url: string) =>
+      // ROLLBACK: Delete newly uploaded images if update fails
+      if (newUrls.length > 0) {
+        this.logger.warn('Rolling back newly uploaded images...');
+        const publicIds = newUrls.map((url) =>
           this.cloudinaryService.extractPublicIdFromUrl(url),
         );
         await this.cloudinaryService.bulkDeleteImages(publicIds);
       }
 
-      throw new BadRequestException(
-        `Error al actualizar producto: ${error.message}`,
-      );
+      throw new BadRequestException(`Error updating product: ${error.message}`);
     }
   }
 
