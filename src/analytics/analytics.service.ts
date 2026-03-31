@@ -2,12 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order } from './model/order.schema';
-import { CreateOrderDto, AnalyticsQueryDto } from './dto/analytics.dto';
+import {
+  CreateOrderDto,
+  AnalyticsQueryDto,
+  RegisterContactClickDto,
+} from './dto/analytics.dto';
+import { SellerContact } from './model/seller-contact.schema';
 
 @Injectable()
 export class AnalyticsService {
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<Order>,
+    @InjectModel(SellerContact.name)
+    private readonly sellerContactModel: Model<SellerContact>,
   ) {}
 
   async createOrder(dto: CreateOrderDto): Promise<Order> {
@@ -68,12 +75,114 @@ export class AnalyticsService {
     return { createdAt: { $gte: startDate } };
   }
 
+  /**
+   * Filtro de fecha para contactos (usa el campo 'date' en formato string)
+   */
+  private getContactDateFilter(period?: string): Record<string, any> {
+    if (!period || period === 'all') return {};
+
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '12m':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        return {};
+    }
+
+    return { date: { $gte: startDate.toISOString().split('T')[0] } };
+  }
+
+  /**
+   * Comparación de período anterior para contactos
+   */
+  private async getContactPeriodComparison(
+    period?: string,
+    sellerFilter: Record<string, any> = {},
+  ) {
+    const now = new Date();
+    let currentStart: Date;
+    let previousStart: Date;
+
+    switch (period) {
+      case '7d':
+        currentStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        previousStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        currentStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        previousStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        currentStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        previousStart = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        currentStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        previousStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+        break;
+    }
+
+    const currentDateStr = currentStart.toISOString().split('T')[0];
+    const previousDateStr = previousStart.toISOString().split('T')[0];
+
+    const [currentAgg, previousAgg] = await Promise.all([
+      this.sellerContactModel.aggregate([
+        {
+          $match: {
+            ...sellerFilter,
+            date: { $gte: currentDateStr },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$clickCount' } } },
+      ]),
+      this.sellerContactModel.aggregate([
+        {
+          $match: {
+            ...sellerFilter,
+            date: { $gte: previousDateStr, $lt: currentDateStr },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$clickCount' } } },
+      ]),
+    ]);
+
+    const current = currentAgg[0]?.total || 0;
+    const previous = previousAgg[0]?.total || 0;
+
+    const percentage =
+      previous > 0
+        ? Math.round(((current - previous) / previous) * 100 * 100) / 100
+        : current > 0
+          ? 100
+          : 0;
+
+    return {
+      currentPeriodClicks: current,
+      previousPeriodClicks: previous,
+      percentage,
+    };
+  }
+
   async getDashboardStats(query: AnalyticsQueryDto) {
     const dateFilter = this.getDateFilter(query.period);
+    const contactDateFilter = this.getContactDateFilter(query.period);
     const sellerFilter = query.sellerPhone
       ? { sellerPhone: query.sellerPhone }
       : {};
     const matchFilter = { ...dateFilter, ...sellerFilter };
+    const contactMatchFilter = { ...contactDateFilter, ...sellerFilter };
 
     const [
       totalOrders,
@@ -85,6 +194,8 @@ export class AnalyticsService {
       deliveryMethodsAgg,
       currencyDistributionAgg,
       recentOrders,
+      // CONTACTOS: Solo lo que necesitas
+      sellerContacts,
     ] = await Promise.all([
       // Total de pedidos
       this.orderModel.countDocuments(matchFilter),
@@ -144,7 +255,7 @@ export class AnalyticsService {
         { $limit: 10 },
       ]),
 
-      // Pedidos por día (últimos 30 días o según el período)
+      // Pedidos por día
       this.orderModel.aggregate([
         { $match: matchFilter },
         {
@@ -192,7 +303,7 @@ export class AnalyticsService {
         { $sort: { count: -1 } },
       ]),
 
-      // Distribución por moneda (de productos vendidos)
+      // Distribución por moneda
       this.orderModel.aggregate([
         { $match: matchFilter },
         { $unwind: '$products' },
@@ -217,6 +328,23 @@ export class AnalyticsService {
           'transactionId sellerName sellerPhone sellerRole totals totalItems totalQuantity deliveryMethod createdAt',
         )
         .lean(),
+
+      // ==========================================
+      // CONTACTOS POR TIENDA (simplificado)
+      // ==========================================
+      this.sellerContactModel.aggregate([
+        { $match: contactMatchFilter },
+        {
+          $group: {
+            _id: '$sellerPhone',
+            sellerName: { $first: '$sellerName' },
+            sellerRole: { $first: '$sellerRole' },
+            totalClicks: { $sum: '$clickCount' },
+            lastContactDate: { $max: '$date' },
+          },
+        },
+        { $sort: { totalClicks: -1 } },
+      ]),
     ]);
 
     const revenue = revenueAgg[0] || {
@@ -228,7 +356,7 @@ export class AnalyticsService {
       totalQuantity: 0,
     };
 
-    // Calcular comparación con período anterior
+    // Calcular comparación con período anterior (solo órdenes)
     const periodComparison = await this.getPeriodComparison(
       query.period,
       sellerFilter,
@@ -285,6 +413,16 @@ export class AnalyticsService {
         totalRevenue: cd.totalRevenue,
       })),
       recentOrders,
+
+      // ==========================================
+      // CONTACTOS POR TIENDA (simplificado)
+      // ==========================================
+      sellerContacts: sellerContacts.map((contact) => ({
+        name: contact.sellerName,
+        role: contact.sellerRole,
+        clicks: contact.totalClicks,
+        lastContact: contact.lastContactDate,
+      })),
     };
   }
 
@@ -372,6 +510,40 @@ export class AnalyticsService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  // ==========================================
+  // CONTACT CLICKS
+  // ==========================================
+
+  async registerContactClick(
+    dto: RegisterContactClickDto,
+  ): Promise<{ success: boolean; totalClicks: number }> {
+    const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+    // Upsert: incrementa el contador si ya existe, crea si no
+    const result = await this.sellerContactModel.findOneAndUpdate(
+      {
+        sellerPhone: dto.sellerPhone,
+        date: today,
+      },
+      {
+        $inc: { clickCount: 1 },
+        $setOnInsert: {
+          sellerName: dto.sellerName,
+          sellerRole: dto.sellerRole,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+      },
+    );
+
+    return {
+      success: true,
+      totalClicks: result.clickCount,
     };
   }
 }

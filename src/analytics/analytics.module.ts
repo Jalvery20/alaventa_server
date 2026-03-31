@@ -6,11 +6,18 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { GAAnalyticsService } from './ga-analytics.service';
 import { Order, OrderSchema } from './model/order.schema';
+import {
+  SellerContact,
+  SellerContactSchema,
+} from './model/seller-contact.schema';
 
 @Module({
   imports: [
     ConfigModule,
-    MongooseModule.forFeature([{ name: Order.name, schema: OrderSchema }]),
+    MongooseModule.forFeature([
+      { name: Order.name, schema: OrderSchema },
+      { name: SellerContact.name, schema: SellerContactSchema },
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

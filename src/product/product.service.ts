@@ -450,22 +450,53 @@ export class ProductService {
       this.validateObjectId(id, 'ID de producto'),
     );
 
-    // Obtener solo vendedores habilitados
-    const allowedSellers = await this.userModel
+    // Obtener provincias y municipios de los sellers del carrito
+    const cartSellers = await this.userModel
       .find({
         _id: { $in: storeIds },
         isAllowed: true,
       })
-      .select('_id')
+      .select('_id province municipality')
       .lean()
       .exec();
 
-    const allowedSellerIds = allowedSellers.map((s) => s._id.toString());
+    const allowedSellerIds = cartSellers.map((s) => s._id.toString());
+    const provinces = [
+      ...new Set(cartSellers.map((s) => s.province).filter(Boolean)),
+    ];
+    const municipalities = [
+      ...new Set(cartSellers.map((s) => s.municipality).filter(Boolean)),
+    ];
 
-    const baseFilter = {
+    // Si no hay provincias, no podemos recomendar nada
+    if (provinces.length === 0) {
+      return [];
+    }
+
+    // Obtener TODOS los sellers de las mismas provincias (filtro obligatorio)
+    const sellersInProvincias = await this.userModel
+      .find({
+        isAllowed: true,
+        province: { $in: provinces },
+      })
+      .select('_id municipality')
+      .lean()
+      .exec();
+
+    const allSellerIdsInProvincia = sellersInProvincias.map((s) =>
+      s._id.toString(),
+    );
+
+    // Sellers del mismo municipio (para mayor prioridad)
+    const sellerIdsInMunicipio = sellersInProvincias
+      .filter((s) => municipalities.includes(s.municipality))
+      .map((s) => s._id.toString());
+
+    const baseFilter: any = {
       _id: { $nin: productIdsToExclude },
       amount: { $gt: 0 },
       isVisible: true,
+      seller: { $in: allSellerIdsInProvincia },
     };
 
     const populateOptions = {
@@ -479,34 +510,63 @@ export class ProductService {
       let recommendations: Product[] = [];
       let remainingLimit = limit;
 
-      // PRIORIDAD 1: Productos de las mismas categorías
+      const updateExclusions = () => {
+        baseFilter._id = {
+          $nin: [
+            ...productIdsToExclude,
+            ...recommendations.map((p) => p._id.toString()),
+          ],
+        };
+      };
+
+      // PRIORIDAD 1: Misma categoría + mismo municipio
+      if (remainingLimit > 0 && sellerIdsInMunicipio.length > 0) {
+        const products = await this.productModel
+          .find({
+            ...baseFilter,
+            category: { $in: categories },
+            seller: { $in: sellerIdsInMunicipio },
+          })
+          .populate(populateOptions)
+          .sort({ updatedAt: -1 })
+          .limit(remainingLimit * 2)
+          .lean()
+          .exec();
+
+        const valid = products.filter((p) => p.seller !== null);
+        recommendations = valid.slice(
+          0,
+          remainingLimit,
+        ) as unknown as Product[];
+        remainingLimit = limit - recommendations.length;
+        updateExclusions();
+      }
+
+      // PRIORIDAD 2: Misma categoría + misma provincia
       if (remainingLimit > 0) {
-        const categoryProducts = await this.productModel
+        const products = await this.productModel
           .find({
             ...baseFilter,
             category: { $in: categories },
           })
           .populate(populateOptions)
           .sort({ updatedAt: -1 })
-          .limit(remainingLimit * 2) // Traer más para compensar filtrado
+          .limit(remainingLimit * 2)
           .lean()
           .exec();
 
-        //  Filtrar productos cuyo seller fue populado correctamente
-        const validProducts = categoryProducts.filter((p) => p.seller !== null);
-        recommendations = validProducts.slice(
-          0,
-          remainingLimit,
-        ) as unknown as Product[];
+        const valid = products.filter((p) => p.seller !== null);
+        recommendations = [
+          ...recommendations,
+          ...valid.slice(0, remainingLimit),
+        ] as unknown as Product[];
         remainingLimit = limit - recommendations.length;
-
-        const foundIds = recommendations.map((p) => p._id.toString());
-        baseFilter._id = { $nin: [...productIdsToExclude, ...foundIds] };
+        updateExclusions();
       }
 
-      // PRIORIDAD 2: Productos de las mismas tiendas habilitadas
+      // PRIORIDAD 3: Mismas tiendas del carrito (misma provincia ya garantizada)
       if (remainingLimit > 0 && allowedSellerIds.length > 0) {
-        const storeProducts = await this.productModel
+        const products = await this.productModel
           .find({
             ...baseFilter,
             seller: { $in: allowedSellerIds },
@@ -517,24 +577,18 @@ export class ProductService {
           .lean()
           .exec();
 
-        const validProducts = storeProducts.filter((p) => p.seller !== null);
+        const valid = products.filter((p) => p.seller !== null);
         recommendations = [
           ...recommendations,
-          ...validProducts.slice(0, remainingLimit),
+          ...valid.slice(0, remainingLimit),
         ] as unknown as Product[];
         remainingLimit = limit - recommendations.length;
-
-        baseFilter._id = {
-          $nin: [
-            ...productIdsToExclude,
-            ...recommendations.map((p) => p._id.toString()),
-          ],
-        };
+        updateExclusions();
       }
 
-      // PRIORIDAD 3: Productos recientes de cualquier tienda habilitada
+      // PRIORIDAD 4: Cualquier producto de la misma provincia
       if (remainingLimit > 0) {
-        const recentProducts = await this.productModel
+        const products = await this.productModel
           .find(baseFilter)
           .populate(populateOptions)
           .sort({ updatedAt: -1 })
@@ -542,10 +596,10 @@ export class ProductService {
           .lean()
           .exec();
 
-        const validProducts = recentProducts.filter((p) => p.seller !== null);
+        const valid = products.filter((p) => p.seller !== null);
         recommendations = [
           ...recommendations,
-          ...validProducts.slice(0, remainingLimit),
+          ...valid.slice(0, remainingLimit),
         ] as unknown as Product[];
       }
 
@@ -558,6 +612,7 @@ export class ProductService {
       );
     }
   }
+
   async toggleProductVisibility(
     productId: string,
     isVisible: boolean,

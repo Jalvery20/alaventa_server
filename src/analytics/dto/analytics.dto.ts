@@ -100,6 +100,39 @@ export class CreateOrderDto {
   totals: TotalsDto;
 }
 
+export class RegisterContactClickDto {
+  @IsString({
+    message: 'El teléfono del vendedor debe ser una cadena de texto',
+  })
+  @MinLength(1, { message: 'El teléfono del vendedor es requerido' })
+  sellerPhone: string;
+
+  @IsString({
+    message: 'El nombre del vendedor debe ser una cadena de texto',
+  })
+  @MinLength(1, { message: 'El nombre del vendedor es requerido' })
+  sellerName: string;
+
+  @IsEnum(['tienda', 'vendedor'], {
+    message: 'El rol del vendedor debe ser tienda o vendedor',
+  })
+  sellerRole: string;
+}
+
+export class ContactAnalyticsQueryDto {
+  @IsOptional()
+  @IsEnum(['7d', '30d', '90d', '12m', 'all'], {
+    message: 'El período debe ser 7d, 30d, 90d, 12m o all',
+  })
+  period?: string;
+
+  @IsOptional()
+  @IsString({
+    message: 'El teléfono del vendedor debe ser una cadena de texto',
+  })
+  sellerPhone?: string;
+}
+
 export class AnalyticsQueryDto {
   @IsOptional()
   @IsEnum(['7d', '30d', '90d', '12m', 'all'], {

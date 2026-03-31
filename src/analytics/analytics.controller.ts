@@ -13,6 +13,7 @@ import {
   CreateOrderDto,
   AnalyticsQueryDto,
   OrdersPaginationDto,
+  RegisterContactClickDto,
 } from './dto/analytics.dto';
 import { AdminGuard } from '../guards/admin.guard';
 import { UserGuard } from '../guards/user.guard';
@@ -63,5 +64,10 @@ export class AnalyticsController {
   @UseGuards(AdminGuard)
   async getGAReport(@Query('period') period?: string) {
     return this.gaAnalyticsService.getFullGAReport(period);
+  }
+
+  @Post('contact-click')
+  async registerContactClick(@Body() dto: RegisterContactClickDto) {
+    return this.analyticsService.registerContactClick(dto);
   }
 }
