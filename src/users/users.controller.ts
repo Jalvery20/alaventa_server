@@ -155,6 +155,11 @@ export class UsersController {
     return this.usersService.getStores(province, municipality);
   }
 
+  @Get('/stores')
+  async getAllStores() {
+    return this.usersService.getAllStores();
+  }
+
   @Get('/store/:name')
   async getStoreByName(@Param('name') name: string) {
     return this.usersService.getStoreByName(name);

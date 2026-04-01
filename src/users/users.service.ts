@@ -1191,6 +1191,34 @@ export class UsersService {
   }
 
   /**
+   * Obtener tiendas sin importar ubicación
+   */
+  async getAllStores() {
+    const storeQuery: Record<string, any> = {
+      role: 'tienda',
+      isAllowed: true,
+    };
+
+    const [stores, total] = await Promise.all([
+      this.userModel
+        .find(storeQuery)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+      this.userModel.countDocuments(storeQuery),
+    ]);
+
+    if (!stores?.length) {
+      throw new NotFoundException(
+        'No existen tiendas en la plataforma actualmente',
+      );
+    }
+
+    return { stores: stores as unknown as User[], total };
+  }
+
+  /**
    * Obtener tienda por nombre
    */
   async getStoreByName(name: string): Promise<User> {
