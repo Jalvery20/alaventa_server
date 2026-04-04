@@ -258,7 +258,7 @@ export class UpdateUserDto {
 export class UpdateStoreDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
   name?: string;
 
   @IsOptional()
