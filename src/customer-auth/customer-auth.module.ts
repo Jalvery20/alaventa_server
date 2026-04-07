@@ -5,11 +5,11 @@ import { initAuth } from './auth';
 @Module({
   imports: [
     AuthModule.forRootAsync({
+      disableGlobalAuthGuard: true,
       useFactory: async () => {
         const auth = await initAuth();
         return {
           auth,
-          disableGlobalAuthGuard: true,
           disableTrustedOriginsCors: true,
           bodyParser: {
             json: { limit: '2mb' },
