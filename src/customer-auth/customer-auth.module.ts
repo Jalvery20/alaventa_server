@@ -12,8 +12,8 @@ import { initAuth } from './auth';
           auth,
           disableTrustedOriginsCors: true,
           bodyParser: {
-            json: { limit: '2mb' },
-            urlencoded: { limit: '2mb', extended: true },
+            json: { enabled: false },
+            urlencoded: { enabled: false },
           },
         };
       },

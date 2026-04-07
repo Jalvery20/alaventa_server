@@ -8,9 +8,7 @@ async function bootstrap() {
   dotenv.config();
   const allowedOrigins = getAllowedOrigins();
 
-  const app = await NestFactory.create(AppModule, {
-    bodyParser: false, // Required for Better Auth
-  });
+  const app = await NestFactory.create(AppModule);
 
   app.enableCors({
     origin: allowedOrigins,
