@@ -2,10 +2,7 @@ import { betterAuth } from 'better-auth';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
 import { phoneNumber } from 'better-auth/plugins';
 import mongoose from 'mongoose';
-import {
-  getAllowedOrigins,
-  getPrimaryClientUrl,
-} from '../config/allowed-origins';
+import { getAuthBaseUrl, getAllowedOrigins } from '../config/allowed-origins';
 
 let authInstance: any;
 
@@ -20,7 +17,7 @@ export async function initAuth() {
   const db = mongoClient.db();
 
   authInstance = betterAuth({
-    baseURL: getPrimaryClientUrl(),
+    baseURL: getAuthBaseUrl(),
     basePath: '/api/customer-auth',
     database: mongodbAdapter(db, { client: mongoClient as any }),
     emailAndPassword: {
