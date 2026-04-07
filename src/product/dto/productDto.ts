@@ -205,6 +205,16 @@ export class BulkVisibilityDto {
   isVisible: boolean;
 }
 
+export class BulkChangeCategoryDto {
+  @IsString({ message: 'La categoría de origen debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'La categoría de origen es requerida' })
+  fromCategory: string;
+
+  @IsString({ message: 'La categoría de destino debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'La categoría de destino es requerida' })
+  toCategory: string;
+}
+
 export class ToggleVisibilityDto {
   @IsBoolean({ message: 'isVisible debe ser un booleano' })
   isVisible: boolean;

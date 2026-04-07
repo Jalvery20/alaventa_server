@@ -202,7 +202,7 @@ export class CreateUserDto {
 
 export class CompleteUserDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
   name: string;
 
   @IsString({ message: 'La provincia debe ser una cadena de texto' })
@@ -229,7 +229,7 @@ export class CompleteUserDto {
 export class UpdateUserDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
   name?: string;
 
   @IsOptional()
@@ -258,7 +258,7 @@ export class UpdateUserDto {
 export class UpdateStoreDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
   name?: string;
 
   @IsOptional()
@@ -506,7 +506,7 @@ export class PatchStoreDetailsDto {
 export class PatchStoreDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @MinLength(5, { message: 'El nombre debe tener al menos 5 caracteres' })
+  @MinLength(4, { message: 'El nombre debe tener al menos 4 caracteres' })
   @MaxLength(100, { message: 'El nombre no debe exceder 100 caracteres' })
   name?: string;
 
@@ -543,7 +543,7 @@ export class PatchStoreDto {
 export class PatchUserDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
-  @MinLength(5, { message: 'El nombre debe tener al menos 5 caracteres' })
+  @MinLength(4, { message: 'El nombre debe tener al menos 4 caracteres' })
   @MaxLength(100, { message: 'El nombre no puede exceder 100 caracteres' })
   name?: string;
 

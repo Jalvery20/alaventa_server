@@ -20,7 +20,7 @@ import { StoreDetails } from './store.details.schema';
   },
 })
 export class User extends Document {
-  @Prop({ minlength: 5, maxlength: 100 })
+  @Prop({ minlength: 4, maxlength: 100 })
   name: string;
 
   @Prop({ minlength: 3, maxlength: 50, default: 'Villa Clara' })
@@ -107,7 +107,7 @@ UserSchema.pre('updateOne', function (next) {
   next();
 });
 
-function handleRoleAndCategories() {
+function handleRoleAndCategories(this: any) {
   // Para el rol de administrador, no establecer expiryDate ni isAllowed
   if (this.role === 'administrador') {
     delete this.expiryDate;

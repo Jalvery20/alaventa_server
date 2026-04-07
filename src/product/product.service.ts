@@ -1595,4 +1595,65 @@ export class ProductService {
       );
     }
   }
+
+  async bulkChangeCategory(fromCategory: string, toCategory: string) {
+    const products = await this.productModel
+      .find({ category: fromCategory })
+      .select('name seller')
+      .populate('seller', 'name province municipality')
+      .lean()
+      .exec();
+
+    await this.productModel
+      .updateMany(
+        { category: fromCategory },
+        { $set: { category: toCategory } },
+      )
+      .exec();
+
+    const modifiedProducts = products.map((p) => {
+      const seller = p.seller as any;
+      return {
+        productName: p.name,
+        sellerName: seller?.name ?? null,
+        province: seller?.province ?? null,
+        municipality: seller?.municipality ?? null,
+      };
+    });
+
+    // Actualizar la categoría en la lista de categorías de las tiendas
+    const stores = await this.userModel
+      .find({ 'storeDetails.categories': fromCategory })
+      .select('name storeDetails.categories')
+      .lean()
+      .exec();
+
+    await this.userModel
+      .updateMany(
+        { 'storeDetails.categories': fromCategory },
+        {
+          $set: {
+            'storeDetails.categories.$[elem]': toCategory,
+          },
+        },
+        { arrayFilters: [{ elem: fromCategory }] },
+      )
+      .exec();
+
+    const modifiedStores = stores.map((s) => ({
+      storeName: s.name,
+      categories: (s as any).storeDetails?.categories ?? [],
+    }));
+
+    this.logger.log(
+      `Categoría cambiada de "${fromCategory}" a "${toCategory}": ${modifiedProducts.length} productos y ${modifiedStores.length} tiendas actualizadas`,
+    );
+
+    return {
+      modifiedCount: modifiedProducts.length,
+      products: modifiedProducts,
+      modifiedStores: modifiedStores.length,
+      stores: modifiedStores,
+    };
+  }
 }
