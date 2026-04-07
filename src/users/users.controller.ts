@@ -33,11 +33,11 @@ import {
   UpdateUserExpiryDateDto,
   UpdateUserRoleDto,
 } from './dto/user.dto';
-import { AdminGuard } from 'src/guards/admin.guard';
-import { StoreGuard } from 'src/guards/store.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { EditUserGuard } from 'src/guards/edit-user.guard';
-import { UserGuard } from 'src/guards/user.guard';
+import { AdminGuard } from '../guards/admin.guard';
+import { UserGuard } from '../guards/user.guard';
+import { StoreGuard } from '../guards/store.guard';
+import { EditUserGuard } from '../guards/edit-user.guard';
 
 @Controller('users')
 export class UsersController {

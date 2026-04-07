@@ -4,9 +4,9 @@ import { ProductService } from './product.service';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { ProductSchema } from './model/product.schema';
 import { MongooseModule } from '@nestjs/mongoose';
-import { UserSchema } from 'src/users/model/user.schema';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { UserSchema } from '../users/model/user.schema';
 @Module({
   imports: [
     CloudinaryModule,

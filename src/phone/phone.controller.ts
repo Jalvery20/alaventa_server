@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { PhoneDto } from './dto/phone.dto';
 import { PhoneService } from './phone.service';
-import { AdminGuard } from 'src/guards/admin.guard';
+import { AdminGuard } from '../guards/admin.guard';
 
 @Controller('phone')
 export class PhoneController {

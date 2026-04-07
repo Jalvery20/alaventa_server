@@ -19,8 +19,8 @@ import {
   UpdateProductDto,
 } from './dto/productDto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { User } from 'src/users/model/user.schema';
 import { PRODUCT_CATEGORIES } from './constants/categories.constants';
+import { User } from '../users/model/user.schema';
 
 interface CategoryStats {
   category: string;
@@ -857,7 +857,7 @@ export class ProductService {
         totalPages,
         currentPage: page,
       };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(
         `Error en búsqueda de productos: ${error.message}`,
         error.stack,
@@ -1122,7 +1122,7 @@ export class ProductService {
 
     try {
       return await nuevoProducto.save();
-    } catch (error) {
+    } catch (error: any) {
       // Rollback: eliminar imágenes usando bulk delete (más rápido)
       const publicIds = uploadResult.success.map((img) =>
         this.cloudinaryService.extractPublicIdFromUrl(img.secure_url),
@@ -1236,7 +1236,7 @@ export class ProductService {
         }
 
         newUrls = uploadResult.success.map((img) => img.secure_url);
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error('Error uploading new images:', error);
         throw new BadRequestException(
           `Error subiendo imágenes: ${error.message}`,
@@ -1291,7 +1291,7 @@ export class ProductService {
       }
 
       return updatedProduct as unknown as Product;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Error updating product ${id}:`, error);
 
       // ROLLBACK: Delete newly uploaded images if update fails
@@ -1352,7 +1352,7 @@ export class ProductService {
       }
 
       return producto as unknown as Product;
-    } catch (error) {
+    } catch (error: any) {
       // Si falla eliminar de DB, no intentar eliminar de Cloudinary
       this.logger.error(`Error al eliminar producto ${id}:`, error);
       throw new HttpException(
