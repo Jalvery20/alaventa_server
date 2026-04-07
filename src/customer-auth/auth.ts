@@ -2,11 +2,17 @@ import { betterAuth } from 'better-auth';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
 import { phoneNumber } from 'better-auth/plugins';
 import mongoose from 'mongoose';
+import {
+  getAllowedOrigins,
+  getPrimaryClientUrl,
+} from '../config/allowed-origins';
 
 let authInstance: any;
 
 export async function initAuth() {
   if (authInstance) return authInstance;
+
+  const allowedOrigins = getAllowedOrigins();
 
   const connection = mongoose.createConnection(process.env.MONGODB_CLOUD);
   const conn = await connection.asPromise();
@@ -14,7 +20,7 @@ export async function initAuth() {
   const db = mongoClient.db();
 
   authInstance = betterAuth({
-    baseURL: process.env.CLIENT_URL || 'http://127.0.0.1:3000',
+    baseURL: getPrimaryClientUrl(),
     basePath: '/api/customer-auth',
     database: mongodbAdapter(db, { client: mongoClient as any }),
     emailAndPassword: {
@@ -39,7 +45,7 @@ export async function initAuth() {
         },
       }),
     ],
-    trustedOrigins: [process.env.CLIENT_URL || 'http://127.0.0.1:3000'],
+    trustedOrigins: allowedOrigins,
   });
 
   return authInstance;

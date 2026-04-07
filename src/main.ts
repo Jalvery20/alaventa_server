@@ -2,15 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import * as dotenv from 'dotenv';
+import { getAllowedOrigins } from './config/allowed-origins';
 
 async function bootstrap() {
   dotenv.config();
+  const allowedOrigins = getAllowedOrigins();
+
   const app = await NestFactory.create(AppModule, {
     bodyParser: false, // Required for Better Auth
   });
 
   app.enableCors({
-    origin: process.env.CLIENT_URL || '*',
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
