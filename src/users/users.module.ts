@@ -5,8 +5,8 @@ import { UserSchema } from './model/user.schema';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
-import { ProductSchema } from 'src/product/model/product.schema';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
+import { ProductSchema } from '../product/model/product.schema';
 
 @Module({
   imports: [

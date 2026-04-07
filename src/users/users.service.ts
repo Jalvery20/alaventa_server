@@ -27,8 +27,8 @@ import {
   UpdateUserExpiryDateDto,
   UpdateUserRoleDto,
 } from './dto/user.dto';
-import { Product } from 'src/product/model/product.schema';
 import * as bcrypt from 'bcryptjs';
+import { Product } from '../product/model/product.schema';
 
 export interface PlatformStats {
   // Usuarios
@@ -336,7 +336,7 @@ export class UsersService {
       const publicId = this.cloudinaryService.extractPublicIdFromUrl(imageUrl);
       await this.cloudinaryService.deleteImage(publicId);
       this.logger.log(`Imagen de tienda eliminada: ${publicId}`);
-    } catch (error) {
+    } catch (error: any) {
       // No lanzar error, solo logear (no es crítico)
       this.logger.warn(
         `No se pudo eliminar imagen anterior de tienda: ${error.message}`,
@@ -1312,7 +1312,7 @@ export class UsersService {
             'No se pudo subir la imagen de la tienda',
           );
         }
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error('Error al subir imagen de tienda:', error);
         throw new BadRequestException(
           `Error al subir imagen: ${error.message}`,
@@ -1355,7 +1355,7 @@ export class UsersService {
       }
 
       return updatedUser;
-    } catch (error) {
+    } catch (error: any) {
       //  Rollback: Si falla actualizar DB, eliminar imagen nueva
       if (
         storePic &&
@@ -1602,7 +1602,7 @@ export class UsersService {
         data: updatedUser,
         message: 'Tienda actualizada correctamente',
       };
-    } catch (error) {
+    } catch (error: any) {
       // Rollback: Si falla actualizar DB, eliminar imagen nueva
       if (newImageUrl) {
         this.logger.warn('Ejecutando rollback de imagen nueva...');
@@ -1697,7 +1697,7 @@ export class UsersService {
         data: updatedUser,
         message: 'Usuario actualizado correctamente',
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 11000 && error.keyPattern?.email) {
         throw new ConflictException('El email ya está registrado');
       }
@@ -1770,7 +1770,7 @@ export class UsersService {
           removed: removedCategories,
         },
       };
-    } catch (error) {
+    } catch (error: any) {
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException
@@ -1869,7 +1869,7 @@ export class UsersService {
         message: 'Usuario eliminado correctamente',
         deletedProductsCount: products.length,
       };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Error al eliminar usuario ${id}:`, error);
       throw new InternalServerErrorException(
         `Error al eliminar usuario: ${error.message}`,

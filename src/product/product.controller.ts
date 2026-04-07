@@ -25,7 +25,6 @@ import {
 } from './product.service';
 import { Product } from './model/product.schema';
 import {
-  BulkChangeCategoryDto,
   BulkDeleteDto,
   BulkVisibilityDto,
   CartRecommendationsDto,
@@ -39,8 +38,7 @@ import {
   UpdateProductDto,
 } from './dto/productDto';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { UserGuard } from 'src/guards/user.guard';
-import { AdminGuard } from 'src/guards/admin.guard';
+import { UserGuard } from '../guards/user.guard';
 
 @Controller('product')
 export class ProductController {

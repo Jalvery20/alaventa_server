@@ -6,9 +6,9 @@ import {
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { User } from 'src/users/model/user.schema';
 import { RegisterUserDto, LoginUserDto } from './dto/auth.dto';
-import { PhoneService } from 'src/phone/phone.service';
+import { User } from '../users/model/user.schema';
+import { PhoneService } from '../phone/phone.service';
 
 @Injectable()
 export class AuthService {
