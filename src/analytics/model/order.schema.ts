@@ -12,7 +12,7 @@ export class OrderProduct {
   @Prop({ type: Number, required: true, min: 0 })
   price: number;
 
-  @Prop({ type: String, enum: ['CUP', 'USD', 'MLC'], default: 'CUP' })
+  @Prop({ type: String, enum: ['CUP', 'USD', 'EUR', 'MLC'], default: 'CUP' })
   currency: string;
 
   @Prop({ type: Number, required: true, min: 1 })
@@ -34,6 +34,9 @@ export class OrderTotals {
 
   @Prop({ type: Number, default: 0 })
   USD: number;
+
+  @Prop({ type: Number, default: 0 })
+  EUR: number;
 }
 
 export const OrderTotalsSchema = SchemaFactory.createForClass(OrderTotals);

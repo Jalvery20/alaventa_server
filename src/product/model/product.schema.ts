@@ -29,7 +29,7 @@ export class Product extends Document {
 
   @Prop({
     type: String,
-    enum: ['CUP', 'USD', 'MLC'],
+    enum: ['CUP', 'USD', 'MLC', 'EUR'],
     default: 'CUP',
     required: [true, 'El tipo de moneda es requerido'],
   })

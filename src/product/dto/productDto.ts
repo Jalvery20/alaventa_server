@@ -61,8 +61,8 @@ export class CreateProductDto {
   category: string;
 
   @IsString({ message: 'El tipo de moneda debe ser una cadena de texto' })
-  @IsIn(['CUP', 'MLC', 'USD'], {
-    message: 'El tipo de moneda debe ser CUP, MLC o USD',
+  @IsIn(['CUP', 'USD', 'EUR', 'MLC'], {
+    message: 'El tipo de moneda debe ser CUP, USD, EUR o MLC',
   })
   currencyType: string;
 
@@ -102,8 +102,8 @@ export class UpdateProductDto {
 
   @IsOptional()
   @IsString({ message: 'El tipo de moneda debe ser una cadena de texto' })
-  @IsIn(['CUP', 'MLC', 'USD'], {
-    message: 'El tipo de moneda debe ser CUP, MLC o USD',
+  @IsIn(['CUP', 'MLC', 'USD', 'EUR'], {
+    message: 'El tipo de moneda debe ser CUP, USD, EUR o MLC',
   })
   currencyType?: string;
 

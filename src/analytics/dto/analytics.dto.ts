@@ -24,8 +24,8 @@ class OrderProductDto {
   @Min(0, { message: 'El precio debe ser mayor o igual a 0' })
   price: number;
 
-  @IsEnum(['CUP', 'USD', 'MLC'], {
-    message: 'La moneda debe ser CUP, USD o MLC',
+  @IsEnum(['CUP', 'USD', 'MLC', 'EUR'], {
+    message: 'La moneda debe ser CUP, USD, EUR o MLC',
   })
   currency: string;
 
@@ -50,6 +50,10 @@ class TotalsDto {
   @IsNumber({}, { message: 'El total USD debe ser un número' })
   @Min(0, { message: 'El total USD debe ser mayor o igual a 0' })
   USD: number;
+
+  @IsNumber({}, { message: 'El total EUR debe ser un número' })
+  @Min(0, { message: 'El total EUR debe ser mayor o igual a 0' })
+  EUR: number;
 }
 
 export class CreateOrderDto {
