@@ -6,8 +6,6 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://alaventasc.vercel.app',
 ];
 
-const DEFAULT_AUTH_BASE_URL = 'http://127.0.0.1:5000';
-
 function splitOrigins(value?: string): string[] {
   if (!value) return [];
 
@@ -40,10 +38,8 @@ export function getPrimaryClientUrl(): string {
 
 export function getAuthBaseUrl(): string {
   return (
-    process.env.AUTH_BASE_URL?.trim() ||
     process.env.BETTER_AUTH_URL?.trim() ||
-    process.env.SERVER_URL?.trim() ||
-    process.env.API_URL?.trim() ||
-    DEFAULT_AUTH_BASE_URL
+    process.env.AUTH_BASE_URL?.trim() ||
+    getPrimaryClientUrl()
   );
 }
