@@ -36,6 +36,12 @@ export class Product extends Document {
   currencyType: string;
 
   @Prop({
+    type: Boolean,
+    default: false,
+  })
+  applyExchangeRate: boolean;
+
+  @Prop({
     type: Number,
     required: [true, 'La cantidad es requerida'],
     min: [0, 'La cantidad debe ser mayor o igual a 0'],

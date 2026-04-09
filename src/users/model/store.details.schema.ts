@@ -1,5 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
+@Schema({ _id: false })
+export class ExchangeRates {
+  @Prop({ default: false })
+  enabled: boolean;
+
+  @Prop({ default: null })
+  usdToCup: number | null; // 1 USD = X CUP
+
+  @Prop({ default: null })
+  eurToCup: number | null; // 1 EUR = X CUP
+
+  @Prop({ default: null })
+  mlcToCup: number | null; // 1 MLC = X CUP
+
+  @Prop({ default: null })
+  updatedAt: Date | null;
+}
+
+export const ExchangeRatesSchema = SchemaFactory.createForClass(ExchangeRates);
+
 /**
  * Esquema para horarios de la tienda
  */
@@ -95,6 +115,18 @@ export class StoreDetails {
     default: { pickup: true, delivery: false },
   })
   deliveryOptions: DeliveryOptions;
+
+  @Prop({
+    type: ExchangeRatesSchema,
+    default: {
+      enabled: false,
+      usdToCup: null,
+      eurToCup: null,
+      mlcToCup: null,
+      updatedAt: null,
+    },
+  })
+  exchangeRates: ExchangeRates;
 }
 
 export const StoreDetailsSchema = SchemaFactory.createForClass(StoreDetails);

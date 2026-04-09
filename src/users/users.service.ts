@@ -1552,6 +1552,13 @@ export class UsersService {
       if (d.is24Hours !== undefined) {
         updateObject['storeDetails.is24Hours'] = d.is24Hours;
       }
+      if (d.exchangeRates !== undefined) {
+        // Agregar updatedAt automáticamente cuando se actualizan las tasas
+        updateObject['storeDetails.exchangeRates'] = {
+          ...d.exchangeRates,
+          updatedAt: new Date(),
+        };
+      }
     }
 
     // Paso 1: Subir nueva imagen PRIMERO (si se proporciona)

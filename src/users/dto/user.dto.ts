@@ -148,6 +148,33 @@ export class DeliveryOptionDTO {
   price: number;
 }
 
+export class ExchangeRatesDTO {
+  @IsBoolean({ message: 'El campo enabled debe ser un booleano' })
+  @IsOptional()
+  enabled?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === null || value === 'null' ? null : value))
+  @ValidateIf((o) => o.usdToCup !== null)
+  @IsNumber({}, { message: 'La tasa USD debe ser un número' })
+  @Min(0, { message: 'La tasa USD debe ser mayor o igual a 0' })
+  usdToCup?: number | null;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === null || value === 'null' ? null : value))
+  @ValidateIf((o) => o.eurToCup !== null)
+  @IsNumber({}, { message: 'La tasa EUR debe ser un número' })
+  @Min(0, { message: 'La tasa EUR debe ser mayor o igual a 0' })
+  eurToCup?: number | null;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === null || value === 'null' ? null : value))
+  @ValidateIf((o) => o.mlcToCup !== null)
+  @IsNumber({}, { message: 'La tasa MLC debe ser un número' })
+  @Min(0, { message: 'La tasa MLC debe ser mayor o igual a 0' })
+  mlcToCup?: number | null;
+}
+
 export class UpdateStoreCategoriesDto {
   @IsArray()
   @ArrayMinSize(1, { message: 'Debe seleccionar al menos una categoría' })
@@ -498,6 +525,13 @@ export class PatchStoreDetailsDto {
   })
   @ValidateIf((o) => o.location !== undefined && o.location !== null)
   location?: GeoLocationDTO | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ExchangeRatesDTO)
+  @Transform(({ value }) => parseOptionalObject(value))
+  @ValidateIf((o) => o.exchangeRates !== undefined)
+  exchangeRates?: ExchangeRatesDTO;
 }
 
 /**

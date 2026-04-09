@@ -68,6 +68,11 @@ export class CreateProductDto {
 
   @IsOptional()
   @Type(() => Boolean)
+  @IsBoolean({ message: 'Aplicar tasa de cambio debe ser un booleano' })
+  applyExchangeRate?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
   @IsBoolean({ message: 'isVisible debe ser un booleano' })
   isVisible?: boolean;
 }
@@ -106,6 +111,11 @@ export class UpdateProductDto {
     message: 'El tipo de moneda debe ser CUP, USD, EUR o MLC',
   })
   currencyType?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean({ message: 'applyExchangeRate debe ser un booleano' })
+  applyExchangeRate?: boolean;
 
   @IsOptional()
   @IsString({ message: 'La descripción debe ser una cadena de texto' })
