@@ -112,6 +112,7 @@ export const PRODUCT_CATEGORIES = [
       'Medicamentos para Mascotas',
       'Adopción y Venta de Mascotas',
       'Camas, Casas y Transportadoras',
+      'Collares, Correas y Arneses',
       'Comederos y Bebederos',
       'Peceras y Jaulas',
       'Otros productos para Animales y Mascotas',
