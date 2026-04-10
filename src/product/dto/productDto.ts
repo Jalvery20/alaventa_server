@@ -113,7 +113,15 @@ export class UpdateProductDto {
   currencyType?: string;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
+  @Transform(({ obj }) => {
+    // Acceder al objeto RAW, no al value ya transformado
+    const raw = obj['applyExchangeRate'];
+
+    if (raw === undefined || raw === null) return undefined;
+    if (raw === '1' || raw === 'true' || raw === true) return true;
+    if (raw === '0' || raw === 'false' || raw === false) return false;
+    return false;
+  })
   @IsBoolean({ message: 'applyExchangeRate debe ser un booleano' })
   applyExchangeRate?: boolean;
 
@@ -215,6 +223,19 @@ export class BulkVisibilityDto {
   isVisible: boolean;
 }
 
+export class BulkExchangeRateDto {
+  @IsArray({ message: 'productIds debe ser un array' })
+  @ArrayMinSize(1, { message: 'Debe proporcionar al menos un ID de producto' })
+  @IsMongoId({
+    each: true,
+    message: 'Cada ID debe ser un ID de MongoDB válido',
+  })
+  productIds: string[];
+
+  @IsBoolean({ message: 'applyExchangeRate debe ser un booleano' })
+  applyExchangeRate: boolean;
+}
+
 export class BulkChangeCategoryDto {
   @IsString({ message: 'La categoría de origen debe ser una cadena de texto' })
   @IsNotEmpty({ message: 'La categoría de origen es requerida' })
@@ -228,6 +249,11 @@ export class BulkChangeCategoryDto {
 export class ToggleVisibilityDto {
   @IsBoolean({ message: 'isVisible debe ser un booleano' })
   isVisible: boolean;
+}
+
+export class ToggleExchangeRateDto {
+  @IsBoolean({ message: 'applyExchangeRate debe ser un booleano' })
+  applyExchangeRate: boolean;
 }
 
 export class CategoryProductDto {

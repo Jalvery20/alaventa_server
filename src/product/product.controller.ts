@@ -26,6 +26,7 @@ import {
 import { Product } from './model/product.schema';
 import {
   BulkDeleteDto,
+  BulkExchangeRateDto,
   BulkVisibilityDto,
   CartRecommendationsDto,
   CategoryProductDto,
@@ -34,6 +35,7 @@ import {
   GetStoreProductsQueryDto,
   ProductSearchDto,
   SellerProductsQueryDto,
+  ToggleExchangeRateDto,
   ToggleVisibilityDto,
   UpdateProductDto,
 } from './dto/productDto';
@@ -287,6 +289,25 @@ export class ProductController {
   }
 
   /**
+   * POST /product/bulk/exchange-rate
+   * Cambiar tasa de cambio en lote
+   */
+  @Post('/bulk/exchange-rate')
+  @UseGuards(UserGuard)
+  @HttpCode(HttpStatus.OK)
+  async bulkExchangeRate(
+    @Body(ValidationPipe) dto: BulkExchangeRateDto,
+    @Req() req,
+  ) {
+    const sellerId = req.user.userId;
+    return this.productService.bulkUpdateExchangeRate(
+      dto.productIds,
+      dto.applyExchangeRate,
+      sellerId,
+    );
+  }
+
+  /**
    * PATCH /product/:id/visibility
    * Toggle visibilidad
    */
@@ -302,6 +323,26 @@ export class ProductController {
     return this.productService.toggleProductVisibility(
       id,
       dto.isVisible,
+      sellerId,
+    );
+  }
+
+  /**
+   * PATCH /product/:id/exchange-rate
+   * Toggle tasa de cambio
+   */
+  @Patch(':id/exchange-rate')
+  @UseGuards(UserGuard)
+  @HttpCode(HttpStatus.OK)
+  async toggleExchangeRate(
+    @Param('id') id: string,
+    @Body(ValidationPipe) dto: ToggleExchangeRateDto,
+    @Req() req,
+  ) {
+    const sellerId = req.user.userId;
+    return this.productService.toggleProductExchangeRate(
+      id,
+      dto.applyExchangeRate,
       sellerId,
     );
   }

@@ -630,6 +630,25 @@ export class ProductService {
   }
 
   /**
+   * Toggle tasa de cambio de un producto
+   */
+  async toggleProductExchangeRate(
+    productId: string,
+    applyExchangeRate: boolean,
+    sellerId: string,
+  ): Promise<{ success: boolean; product: Product }> {
+    this.validateObjectId(productId, 'ID de producto');
+    await this.verifyProductOwnership(productId, sellerId);
+
+    const updatedProduct = await this.productModel
+      .findByIdAndUpdate(productId, { applyExchangeRate }, { new: true })
+      .lean()
+      .exec();
+
+    return { success: true, product: updatedProduct as unknown as Product };
+  }
+
+  /**
    * Actualizar visibilidad de múltiples productos
    */
   async bulkUpdateVisibility(
@@ -659,6 +678,44 @@ export class ProductService {
     const result = await this.productModel.updateMany(
       { _id: { $in: productIds }, seller: sellerId },
       { isVisible },
+    );
+
+    return {
+      success: true,
+      modifiedCount: result.modifiedCount,
+    };
+  }
+
+  /**
+   * Actualizar tasa de cambio de múltiples productos
+   */
+  async bulkUpdateExchangeRate(
+    productIds: string[],
+    applyExchangeRate: boolean,
+    sellerId: string,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    // Validar todos los IDs
+    productIds.forEach((id) => this.validateObjectId(id, 'ID de producto'));
+
+    // Verificar que todos los productos pertenecen al vendedor
+    const products = await this.productModel
+      .find({
+        _id: { $in: productIds },
+        seller: sellerId,
+      })
+      .select('_id')
+      .lean()
+      .exec();
+
+    if (products.length !== productIds.length) {
+      throw new ForbiddenException(
+        'Algunos productos no te pertenecen o no existen',
+      );
+    }
+
+    const result = await this.productModel.updateMany(
+      { _id: { $in: productIds }, seller: sellerId },
+      { applyExchangeRate },
     );
 
     return {
