@@ -89,14 +89,13 @@ export class UpdateProductDto {
   })
   name?: string;
 
-  @IsOptional()
-  @Transform(({ value }) => parseInt(value))
-  @IsInt({ message: 'El precio debe ser un número entero' })
+  @Transform(({ value }) => parseFloat(value))
+  @IsNumber({}, { message: 'El precio debe ser un número' })
   @Min(1, { message: 'El precio debe ser mayor o igual a 1' })
   price?: number;
 
   @IsOptional()
-  @Transform(({ value }) => (value ? parseInt(value) : null))
+  @Transform(({ value }) => (value ? parseFloat(value) : null))
   originalPrice?: number | null;
 
   @IsOptional()
