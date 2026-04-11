@@ -1024,7 +1024,7 @@ export class UsersService {
       // Obtener usuarios - SOLO EXCLUSIÓN
       const users = await this.userModel
         .find(filter)
-        .select('-password -__v') // ✅ Solo exclusión
+        .select('-password -__v')
         .sort({ createdAt: -1 })
         .lean()
         .exec();
@@ -1322,7 +1322,7 @@ export class UsersService {
 
     // Paso 2: Construir objeto de actualización
     const updateData = {
-      name: updateStoreDto.name || user.name,
+      name: (updateStoreDto.name || user.name)?.trim(),
       address: updateStoreDto.address || user.address,
       province: updateStoreDto.province || user.province,
       municipality: updateStoreDto.municipality || user.municipality,
@@ -1503,7 +1503,7 @@ export class UsersService {
 
     // Campos de primer nivel
     if (patchStoreDto.name !== undefined) {
-      updateObject.name = patchStoreDto.name;
+      updateObject.name = patchStoreDto.name.trim();
     }
     if (patchStoreDto.province !== undefined) {
       updateObject.province = patchStoreDto.province;
@@ -1662,7 +1662,7 @@ export class UsersService {
     const updateObject: Record<string, any> = {};
 
     if (patchUserDto.name !== undefined) {
-      updateObject.name = patchUserDto.name;
+      updateObject.name = patchUserDto.name.trim();
     }
     if (patchUserDto.province !== undefined) {
       updateObject.province = patchUserDto.province;
@@ -1882,5 +1882,23 @@ export class UsersService {
         `Error al eliminar usuario: ${error.message}`,
       );
     }
+  }
+  async fixStoreName(currentName: string, fixedName: string): Promise<User> {
+    const user = await this.userModel
+      .findOneAndUpdate(
+        { name: currentName },
+        { $set: { name: fixedName } },
+        { new: true },
+      )
+      .select('-password')
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException(
+        `No se encontró tienda con nombre: ${currentName}`,
+      );
+    }
+
+    return user as unknown as User;
   }
 }

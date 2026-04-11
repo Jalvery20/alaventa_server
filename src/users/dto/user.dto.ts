@@ -197,7 +197,8 @@ export class UpdateStoreCategoriesDto {
 export class CreateUserDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @IsNotEmpty({ message: 'El nombre es requerido' })
-  @Length(5, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Length(4, 100, { message: 'El nombre debe tener entre 5 y 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name?: string;
 
   @IsString({ message: 'La contraseña debe ser una cadena de texto' })
@@ -230,6 +231,7 @@ export class CreateUserDto {
 export class CompleteUserDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name: string;
 
   @IsString({ message: 'La provincia debe ser una cadena de texto' })
@@ -257,6 +259,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name?: string;
 
   @IsOptional()
@@ -286,6 +289,7 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @Length(4, 100, { message: 'El nombre debe tener entre 4 y 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name?: string;
 
   @IsOptional()
@@ -542,6 +546,7 @@ export class PatchStoreDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @MinLength(4, { message: 'El nombre debe tener al menos 4 caracteres' })
   @MaxLength(100, { message: 'El nombre no debe exceder 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name?: string;
 
   @IsOptional()
@@ -579,6 +584,7 @@ export class PatchUserDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   @MinLength(4, { message: 'El nombre debe tener al menos 4 caracteres' })
   @MaxLength(100, { message: 'El nombre no puede exceder 100 caracteres' })
+  @Transform(({ value }) => value?.trim())
   name?: string;
 
   @IsOptional()
